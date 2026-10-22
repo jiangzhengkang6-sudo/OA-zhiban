@@ -18,7 +18,7 @@ execution_mode: inline
 execution_plan_hash: sha256:7cba63b92a11aa52d8bac2bd4a4cb6f6d3fe565b02a4951b0fb219d930721325
 execution_plan_revision: 3
 batches_completed: 0
-test_result: null
+test_result: fail
 spec_merged: false
 spec_publication_receipt: null
 
@@ -53,8 +53,8 @@ dp_5_result: null
 dp_5_timestamp: null
 dp_5_decisions: null
 dp_5_confirmed: null
-dp_6_result: null
-dp_6_timestamp: null
+dp_6_result: incomplete: frontend Docker image metadata fetch failed; local 107 host tests, Docker recovery and 81 embedded tests, frontend build and 119 tests passed; final review receipt cannot be recorded without historical target branch provenance
+dp_6_timestamp: 2026-10-22T08:01:26.610Z
 dp_6_decisions: null
 dp_6_confirmed: null
 dp_7_result: null
