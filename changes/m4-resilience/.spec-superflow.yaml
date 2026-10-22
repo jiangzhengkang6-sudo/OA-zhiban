@@ -2,7 +2,7 @@
 # Progress and legacy approvals. Recover missing evidence; never infer approval from artifact existence.
 
 # === Core state ===
-state: executing
+state: closing
 workflow: full
 workflow_variant: legacy
 completion_outcome: null
@@ -24,9 +24,9 @@ spec_publication_receipt: eyJ2ZXJzaW9uIjoxLCJzb3VyY2VfaGFzaCI6InNoYTI1Njo5ZjdmZD
 
 # === Metadata ===
 change_name: m4-resilience
-last_transition: 2026-10-22T08:29:25.292Z
-last_transition_from: approved-for-build
-last_transition_to: executing
+last_transition: 2026-10-22T09:12:01.015Z
+last_transition_from: executing
+last_transition_to: closing
 
 # === Decision points ===
 dp_0_result: confirmed
