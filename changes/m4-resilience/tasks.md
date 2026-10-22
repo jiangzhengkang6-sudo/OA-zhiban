@@ -75,7 +75,7 @@ Depends on: Batch 1 Task 1.1。
 
 ### Batch 2: 生产式配置拒绝危险值
 
-- [ ] 2.1 为正式模式增加凭据与 Mock Provider 安全校验
+- [x] 2.1 为正式模式增加凭据与 Mock Provider 安全校验
 
 Files: `backend/app/db/migrations.py`, `backend/tests/unit/test_startup_safety.py`
 
