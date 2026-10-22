@@ -24,6 +24,12 @@ def _render_compose(tmp_path, *, overlay, include_password=True):
         "M4_DATABASE_SYNC_URL=postgresql+psycopg://oa:m4-synthetic-only-password@m4-db:5432/oa_m4_config_test_test",
         "M4_CHECKPOINTER_URL=postgresql://oa:m4-synthetic-only-password@m4-db:5432/oa_m4_config_test_test",
         "FRONTEND_PORT=15173",
+        "AUTH_PROVIDER=builtin",
+        "AUTH_TENANT_ID=m4-synthetic",
+        "AUTH_JWT_SECRET=M4-synthetic-jwt-for-config-validation-only",
+        'AUTH_ALLOWED_ORIGINS=["https://oa.example.test"]',
+        "AI_ENABLED=false",
+        "POSTGRES_DB=oa_m4_custom_test",
     ]
     if include_password:
         values.append("POSTGRES_PASSWORD=m4-synthetic-only-password")
@@ -52,6 +58,31 @@ def test_base_compose_has_no_fixed_container_names_or_weak_database_password(tmp
     assert compose["services"]["db"]["environment"]["POSTGRES_PASSWORD"] == "m4-synthetic-only-password"
     missing_password = _render_compose(tmp_path, overlay=False, include_password=False)
     assert missing_password.returncode != 0
+
+
+def test_compose_forwards_formal_identity_and_persists_managed_files(tmp_path):
+    result = _render_compose(tmp_path, overlay=False)
+    assert result.returncode == 0, result.stderr
+    backend = json.loads(result.stdout)['services']['backend']
+    env = backend['environment']
+    assert env['AUTH_TENANT_ID'] == 'm4-synthetic'
+    assert env['AUTH_JWT_SECRET'] == 'M4-synthetic-jwt-for-config-validation-only'
+    assert json.loads(env['AUTH_ALLOWED_ORIGINS']) == ['https://oa.example.test']
+    assert env['AUTH_COOKIE_SECURE'] == 'true'
+    assert env['AI_ENABLED'] == 'false'
+    assert any(v['target'] == '/app/data' and v['type'] == 'volume' for v in backend['volumes'])
+    assert env['ATTACHMENT_STORAGE_DIR'].startswith('/app/data/')
+    assert env['KNOWLEDGE_STORAGE_DIR'].startswith('/app/data/')
+
+
+def test_base_compose_uses_one_explicit_database_name(tmp_path):
+    result = _render_compose(tmp_path, overlay=False)
+    assert result.returncode == 0, result.stderr
+    services = json.loads(result.stdout)['services']
+    assert services['db']['environment']['POSTGRES_DB'] == 'oa_m4_custom_test'
+    assert '$POSTGRES_DB' in services['db']['healthcheck']['test'][-1]
+    for name in ('DATABASE_URL', 'DATABASE_SYNC_URL', 'CHECKPOINTER_URL'):
+        assert services['backend']['environment'][name].endswith('/oa_m4_custom_test')
 
 
 def test_m4_compose_config_isolated_and_does_not_publish_database_port(tmp_path):

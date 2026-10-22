@@ -15,7 +15,7 @@ contract_hash: sha256:b95aa823444f9a64cb5ae7108d3a0f0a9b19f4a748f3704dcc53cda75e
 
 # === Execution progress ===
 execution_mode: inline
-execution_plan_hash: sha256:cf0b90a60994248c3c18b1084e9752c413ca370c6fe61fcfa1be52a84fb0c428
+execution_plan_hash: sha256:7cba63b92a11aa52d8bac2bd4a4cb6f6d3fe565b02a4951b0fb219d930721325
 execution_plan_revision: 3
 batches_completed: 0
 test_result: null

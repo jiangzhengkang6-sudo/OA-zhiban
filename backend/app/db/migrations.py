@@ -7,6 +7,7 @@ from sqlalchemy.engine import make_url
 
 
 def _validate_production_database_urls(settings) -> None:
+    database_target = None
     for field in ('database_url', 'database_sync_url', 'checkpointer_url'):
         try:
             url = make_url(getattr(settings, field))
@@ -26,6 +27,10 @@ def _validate_production_database_urls(settings) -> None:
             unsafe = True
         if unsafe:
             raise RuntimeError(f'生产数据库配置 {field} 无效：须使用完整 PostgreSQL 连接和至少 16 字节的非默认独立口令') from None
+        target = (url.host.casefold(), url.port or 5432, url.database)
+        if database_target is not None and target != database_target:
+            raise RuntimeError('生产数据库连接必须指向同一主机、端口和数据库') from None
+        database_target = target
 
 
 def migration_config() -> Config:
@@ -71,3 +76,15 @@ def assert_schema_current(connection):
     actual = set(MigrationContext.configure(connection).get_current_heads())
     if actual != expected:
         raise RuntimeError("数据库结构未升级；请在 backend 执行 python -m alembic upgrade head（不会删除已有 MVP 数据）")
+
+
+# Only this tracked baseline has been included in the isolated M4 rollback drill.
+APPLICATION_ROLLBACK_SCHEMAS = {
+    '8cb8fc625d3bb1c175f17cb0321e32837171a6b2': frozenset({'0029'}),
+}
+
+
+def assert_application_rollback_compatible(revision: str, current_heads: set[str]) -> None:
+    expected = APPLICATION_ROLLBACK_SCHEMAS.get(revision)
+    if expected is None or frozenset(current_heads) != expected:
+        raise RuntimeError('应用回退版本与数据库结构未经兼容验证；禁止切换，请向前修复或恢复到独立目标')

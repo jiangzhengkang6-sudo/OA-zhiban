@@ -154,7 +154,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     Returns:
         JSONResponse: 统一 500 结构。
     """
-    logger.exception("未处理异常: %s", exc)
+    # Exception messages/traceback source can contain credentials or request bodies.
+    import traceback
+    frames = traceback.extract_tb(exc.__traceback__)
+    locations = [(frame.name, frame.lineno) for frame in frames[-8:]]
+    logger.error("未处理异常；类型=%s；trace_id=%s；调用位置=%s",
+                 type(exc).__name__, get_trace_id(), locations)
     return JSONResponse(
         status_code=500,
         content=ApiResponse(

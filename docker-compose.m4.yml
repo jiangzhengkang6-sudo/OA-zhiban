@@ -12,9 +12,12 @@ services:
 
   backend:
     image: oa-m4-resilience-backend:local
+    volumes: !reset []
     environment:
       ENVIRONMENT: test
       AUTH_PROVIDER: mock
+      AUTH_JWT_SECRET: ""
+      AUTH_ALLOWED_ORIGINS: '["https://localhost"]'
       OA_PROVIDER: mock
       OA_BASE_URL: ""
       OA_API_KEY: ""

@@ -6,14 +6,14 @@ services:
     environment:
       POSTGRES_USER: oa
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
-      POSTGRES_DB: oa_agent
+      POSTGRES_DB: ${POSTGRES_DB:-oa_agent}
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
       - oa_pgdata:/var/lib/postgresql/data
       - ./backend/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U oa -d oa_agent"]
+      test: ["CMD-SHELL", "pg_isready -U oa -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -25,6 +25,11 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       AUTH_PROVIDER: ${AUTH_PROVIDER:-mock}
+      AUTH_TENANT_ID: ${AUTH_TENANT_ID:-local}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
+      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-[]}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      AI_ENABLED: ${AI_ENABLED:-true}
       OA_PROVIDER: ${OA_PROVIDER:-mock}
       OA_BASE_URL: ${OA_BASE_URL:-}
       OA_API_KEY: ${OA_API_KEY:-}
@@ -51,6 +56,10 @@ services:
       DATABASE_SYNC_URL: postgresql+psycopg://oa:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-oa_agent}
       CHECKPOINTER_URL: postgresql://oa:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-oa_agent}
       ALLOW_TEST_DATABASE_RESET: "false"
+      ATTACHMENT_STORAGE_DIR: /app/data/leave_attachments
+      KNOWLEDGE_STORAGE_DIR: /app/data/knowledge_files
+    volumes:
+      - oa_files:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -80,3 +89,4 @@ services:
 
 volumes:
   oa_pgdata:
+  oa_files:

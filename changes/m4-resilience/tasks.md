@@ -171,7 +171,7 @@ Depends on: Batch 4 Task 4.2。
 
 ### Batch 5: 集成、安全和降级演练
 
-- [ ] 5.1 端到端隔离备份恢复与幂等核验
+- [x] 5.1 端到端隔离备份恢复与幂等核验
 
 Files: `backend/tests/integration/test_m4_recovery_drill.py`, `backend/app/ops/m4_safety.py`, `backend/app/ops/m4_archive.py`, `backend/app/ops/m4_restore.py`
 
@@ -186,7 +186,7 @@ TDD phases:
 
 Depends on: Batch 4 Task 4.2, Batch 4 Task 4.3。
 
-- [ ] 5.2 验证 AI 降级及本体故障备用流程
+- [x] 5.2 验证 AI 降级及本体故障备用流程
 
 Files: `backend/tests/recovery/test_m4_degradation.py`, `docs/m4-drill-runbook.md`
 
@@ -201,7 +201,7 @@ TDD phases:
 
 Depends on: Batch 5 Task 5.1。
 
-- [ ] 5.3 验证安全边界和迁移回退
+- [x] 5.3 验证安全边界和迁移回退
 
 Files: `backend/tests/security/test_m4_boundaries.py`, `backend/tests/migrations/test_m4_upgrade_rollback.py`, `docker-compose.yml`, `backend/app/db/migrations.py`
 
@@ -218,7 +218,7 @@ Depends on: Batch 2 Task 2.1, Batch 5 Task 5.1。
 
 ### Batch 6: 手册、回归与验收报告
 
-- [ ] 6.1 修订部署和回滚操作手册
+- [x] 6.1 修订部署和回滚操作手册
 
 Files: `docs/production-deployment.md`, `docs/rollback-runbook.md`, `docs/m4-drill-runbook.md`
 
@@ -234,6 +234,8 @@ TDD phases:
 Depends on: Batch 5 Task 5.1, Batch 5 Task 5.2, Batch 5 Task 5.3。
 
 - [ ] 6.2 完成 M4 串行验收与证据报告
+
+2026-10-22：报告已建立，本地数据库/恢复/安全/降级及前端测试通过。前端 Docker 构建获取 `nginx:1.27-alpine` 元数据时失败（返回 `text/html`），镜像构建门禁未通过；本任务保持未完成，不关闭 M4。详见 `reviews/m4-verification.md`。
 
 Files: `changes/m4-resilience/reviews/m4-verification.md`, `backend/scripts/m4_drill.py`, `backend/tests/integration/test_m4_recovery_drill.py`, `backend/tests/recovery/test_m4_degradation.py`
 

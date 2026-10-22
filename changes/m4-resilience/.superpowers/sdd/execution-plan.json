@@ -69,7 +69,7 @@
       ]
     }
   ],
-  "artifacts_hash": "sha256:b99908cc0f1ad3ba1ab703797605e587165cccbbf65d02b96adb0bfa3aa5d608",
+  "artifacts_hash": "sha256:9828e74e99bb043f314b6bf13b68be27af460013e368efffb34b251095c05e62",
   "contract_hash": "sha256:b95aa823444f9a64cb5ae7108d3a0f0a9b19f4a748f3704dcc53cda75e1b969a",
   "workflow": "full",
   "revision": 3,
@@ -184,17 +184,17 @@
         ]
       }
     ],
-    "artifacts_hash": "sha256:b99908cc0f1ad3ba1ab703797605e587165cccbbf65d02b96adb0bfa3aa5d608",
+    "artifacts_hash": "sha256:9828e74e99bb043f314b6bf13b68be27af460013e368efffb34b251095c05e62",
     "contract_hash": "sha256:b95aa823444f9a64cb5ae7108d3a0f0a9b19f4a748f3704dcc53cda75e1b969a",
     "workflow": "full",
     "execution_plan_revision_at_recommendation": 2,
     "created_at": "2026-10-22T03:57:52.133Z",
-    "hash": "sha256:24c9492df83d193ff46c279dde5d243930d4e1a3cd87509fd4301367f16769fe"
+    "hash": "sha256:6fd2f6056e7fe92919f296b3edfddddd1090c56732c72ab7b80c2668444672aa"
   },
   "selection": {
     "confirmed": true,
     "followed_recommendation": true,
     "acknowledged_non_recommendation": false
   },
-  "hash": "sha256:cf0b90a60994248c3c18b1084e9752c413ca370c6fe61fcfa1be52a84fb0c428"
+  "hash": "sha256:7cba63b92a11aa52d8bac2bd4a4cb6f6d3fe565b02a4951b0fb219d930721325"
 }

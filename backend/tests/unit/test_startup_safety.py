@@ -74,6 +74,20 @@ def test_production_accepts_explicit_database_credentials():
     validate_runtime_configuration(production_settings())
 
 
+@pytest.mark.parametrize('field', ['database_url', 'database_sync_url', 'checkpointer_url'])
+@pytest.mark.parametrize('target', ['different-db/oa_m4_config_test',
+                                   'm4-db:5434/oa_m4_config_test', 'm4-db/other_database'])
+def test_production_rejects_split_database_targets(field, target):
+    with pytest.raises(RuntimeError, match='数据库'):
+        validate_runtime_configuration(production_settings(**{
+            field: f'postgresql://oa:Synthetic-Strong-487!@{target}'}))
+
+
+def test_production_normalizes_default_database_port():
+    validate_runtime_configuration(production_settings(
+        checkpointer_url='postgresql://oa:Synthetic-Strong-487!@m4-db:5432/oa_m4_config_test'))
+
+
 @pytest.mark.parametrize('environment', ['test', 'development'])
 def test_nonproduction_keeps_mock_preview_compatible(environment):
     validate_runtime_configuration(Settings(_env_file=None, environment=environment,
