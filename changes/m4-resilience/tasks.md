@@ -92,7 +92,7 @@ Depends on: Batch 1 Task 1.2。
 
 ### Batch 3: 备份创建与完整性校验
 
-- [ ] 3.1 定义备份清单和文件内容校验
+- [x] 3.1 定义备份清单和文件内容校验
 
 Files: `backend/app/ops/m4_archive.py`, `backend/tests/unit/test_m4_archive.py`
 
@@ -107,7 +107,7 @@ TDD phases:
 
 Depends on: Batch 1 Task 1.1。
 
-- [ ] 3.2 生成数据库与受管文件备份集
+- [x] 3.2 生成数据库与受管文件备份集
 
 Files: `backend/app/ops/m4_archive.py`, `backend/tests/unit/test_m4_archive.py`, `backend/scripts/m4_drill.py`
 
@@ -124,7 +124,7 @@ Depends on: Batch 1 Task 1.1, Batch 3 Task 3.1。
 
 ### Batch 4: 独立目标恢复与业务核验
 
-- [ ] 4.1 实现恢复目标保护和备份前置校验
+- [x] 4.1 实现恢复目标保护和备份前置校验
 
 Files: `backend/app/ops/m4_restore.py`, `backend/tests/unit/test_m4_restore.py`
 
@@ -139,7 +139,7 @@ TDD phases:
 
 Depends on: Batch 1 Task 1.1, Batch 3 Task 3.1。
 
-- [ ] 4.2 恢复数据库和文件到新的空白目标
+- [x] 4.2 恢复数据库和文件到新的空白目标
 
 Files: `backend/app/ops/m4_restore.py`, `backend/tests/unit/test_m4_restore.py`, `backend/scripts/m4_drill.py`
 
@@ -154,7 +154,7 @@ TDD phases:
 
 Depends on: Batch 4 Task 4.1。
 
-- [ ] 4.3 计算恢复指标
+- [x] 4.3 计算恢复指标
 
 Files: `backend/app/ops/m4_metrics.py`, `backend/tests/unit/test_m4_metrics.py`
 
@@ -259,3 +259,9 @@ Depends on: Batch 6 Task 6.1。
 | 升级与回退不得破坏业务数据 | 1.2, 2.1, 5.3, 6.1 |
 | 安全边界与审计通过验证 | 2.1, 5.3, 6.2 |
 | 降级路径保持人工业务可用 | 5.2, 6.2 |
+
+## 执行进度
+
+- 2026-10-22：用户授权建立 Git 基线并继续 M4；基线 `8cb8fc6` 已包含 Batch 1，最终审查需补充该快照的检查。正式配置校验提交 `bfe9fb6`。
+- Batch 2–4：三连接凭据校验、完整性清单、自定义格式备份、独立空目标事务恢复、RPO/RTO 计算与 CLI 已实现；相关单测 95 passed。真实 `.env`、预览数据库与外部服务未使用。
+- Compose 环境隔离测试发现 Windows 插件依赖 `ProgramFiles`，通过单变量验证后加入系统路径白名单；M4 专用卷改为与校验器一致的 project 前缀，数据库端口仅回环绑定。下一步执行隔离 PostgreSQL 和业务恢复集成演练。

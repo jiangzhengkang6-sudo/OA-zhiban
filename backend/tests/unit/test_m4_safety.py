@@ -35,7 +35,8 @@ def _render_compose(tmp_path, *, overlay, include_password=True):
     return subprocess.run(
         command,
         cwd=PROJECT_ROOT,
-        env=os.environ.copy(),
+        env={key: value for key, value in os.environ.items() if key.upper() in {
+            'PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES'}},
         capture_output=True,
         text=True,
         check=False,
@@ -60,7 +61,7 @@ def test_m4_compose_config_isolated_and_does_not_publish_database_port(tmp_path)
     rendered = json.loads(result.stdout)
     assert not rendered["services"]["db"].get("ports")
     assert all("container_name" not in service for service in rendered["services"].values())
-    assert rendered["volumes"]["oa_pgdata"]["name"].startswith("oa-m4-config-test_")
+    assert rendered["volumes"]["oa_pgdata"]["name"] == "oa-m4-config-test-pgdata"
     backend_env = rendered["services"]["backend"]["environment"]
     assert backend_env["ENVIRONMENT"] == "test"
     assert backend_env["OA_PROVIDER"] == backend_env["AUTH_PROVIDER"] == "mock"

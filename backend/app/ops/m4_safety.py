@@ -2,7 +2,11 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
+import os
 import re
+import subprocess
+import tempfile
 
 
 M4_DRILL_ROOT = Path(__file__).resolve().parents[3] / "data" / "m4-drills"
@@ -80,3 +84,78 @@ def validate_drill_target(target: DrillTarget) -> ValidatedTarget:
         file_root=file_root,
         identity=identity,
     )
+
+
+def revalidate_target(target: ValidatedTarget) -> ValidatedTarget:
+    if not isinstance(target, ValidatedTarget):
+        raise UnsafeTargetError('必须提供经验证的演练目标')
+    checked = validate_drill_target(DrillTarget(target.compose_project, target.database_host,
+        target.database_name, target.volume_name, target.file_root, 'M4_DRILL'))
+    if checked != target:
+        raise UnsafeTargetError('演练目标身份已变化')
+    return checked
+
+
+def contained_path(path: Path) -> Path:
+    """Reject links before resolving, including Windows directory junctions."""
+    path = Path(path).absolute()
+    for part in (path, *path.parents):
+        if part.is_symlink() or part.is_junction():
+            raise UnsafeTargetError('演练路径不允许符号链接或目录联接')
+    root = Path(M4_DRILL_ROOT).resolve()
+    resolved = path.resolve()
+    if resolved == root or not resolved.is_relative_to(root):
+        raise UnsafeTargetError('文件目录超出 M4 演练白名单')
+    return resolved
+
+
+def compose_run(target: ValidatedTarget, args: list[str], **kwargs):
+    revalidate_target(target)
+    project_root = Path(__file__).resolve().parents[3]
+    # Never load a developer .env or inherit provider settings into a drill.
+    env = {key: value for key, value in os.environ.items()
+           if key.upper() in {'PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE',
+                              'PROGRAMDATA', 'PROGRAMFILES', 'APPDATA', 'LOCALAPPDATA', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG'}}
+    env.update(POSTGRES_PASSWORD='M4-Synthetic-Only-4917', M4_DATABASE_NAME=target.database_name,
+        M4_DATABASE_URL=f'postgresql+asyncpg://oa:M4-Synthetic-Only-4917@m4-db/{target.database_name}',
+        M4_DATABASE_SYNC_URL=f'postgresql+psycopg://oa:M4-Synthetic-Only-4917@m4-db/{target.database_name}',
+        M4_CHECKPOINTER_URL=f'postgresql://oa:M4-Synthetic-Only-4917@m4-db/{target.database_name}')
+    with tempfile.TemporaryDirectory(prefix='m4-compose-') as temporary:
+        env_file = Path(temporary) / 'synthetic.env'
+        env_file.touch()
+        command = ['docker', 'compose', '--env-file', str(env_file), '-p', target.compose_project,
+                   '-f', str(project_root / 'docker-compose.yml'),
+                   '-f', str(project_root / 'docker-compose.m4.yml'), *args]
+        try:
+            result = subprocess.run(command, cwd=project_root, env=env, stderr=subprocess.PIPE,
+                                    timeout=kwargs.pop('timeout', 120), **kwargs)
+        except (subprocess.SubprocessError, OSError):
+            raise UnsafeTargetError('M4 隔离命令执行失败；请检查 Docker 状态') from None
+    if result.returncode:
+        raise UnsafeTargetError('M4 隔离命令未成功；未记录凭据或原始错误输出')
+    return result
+
+
+def assert_database_container(target: ValidatedTarget) -> None:
+    result = compose_run(target, ['ps', '-q', 'db'], stdout=subprocess.PIPE)
+    container_id = result.stdout.decode().strip()
+    if not re.fullmatch(r'[0-9a-f]{12,64}', container_id):
+        raise UnsafeTargetError('未找到唯一的 M4 数据库容器')
+    result = subprocess.run(['docker', 'inspect', container_id], capture_output=True, timeout=30)
+    if result.returncode:
+        raise UnsafeTargetError('不能验证 M4 数据库容器身份')
+    try:
+        record, = json.loads(result.stdout)
+        labels = record['Config']['Labels']
+        environment = dict(item.split('=', 1) for item in record['Config']['Env'] if '=' in item)
+        volumes = [m['Name'] for m in record['Mounts'] if m['Type'] == 'volume']
+        valid = (labels.get('com.docker.compose.project') == target.compose_project
+                 and labels.get('com.docker.compose.service') == 'db'
+                 and environment.get('POSTGRES_DB') == target.database_name
+                 and record['Config']['Hostname'] == 'm4-db'
+                 and volumes == [target.volume_name]
+                 and record['State']['Running'])
+    except (KeyError, TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise UnsafeTargetError('M4 数据库容器、数据库名或持久化卷身份不匹配')

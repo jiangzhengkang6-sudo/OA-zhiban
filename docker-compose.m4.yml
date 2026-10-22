@@ -4,8 +4,14 @@ services:
     ports: !reset []
     environment:
       POSTGRES_DB: ${M4_DATABASE_NAME:?M4_DATABASE_NAME must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oa -d $$POSTGRES_DB"]
+    networks:
+      default:
+        aliases: [m4-db]
 
   backend:
+    image: oa-m4-resilience-backend:local
     environment:
       ENVIRONMENT: test
       AUTH_PROVIDER: mock
@@ -30,4 +36,9 @@ services:
       CHECKPOINTER_URL: ${M4_CHECKPOINTER_URL:?M4_CHECKPOINTER_URL must be set}
 
 volumes:
-  oa_pgdata: {}
+  oa_pgdata:
+    name: ${COMPOSE_PROJECT_NAME:?Compose project must be explicit}-pgdata
+
+networks:
+  default:
+    internal: true
