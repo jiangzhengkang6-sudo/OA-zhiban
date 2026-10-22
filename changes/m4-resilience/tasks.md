@@ -233,9 +233,9 @@ TDD phases:
 
 Depends on: Batch 5 Task 5.1, Batch 5 Task 5.2, Batch 5 Task 5.3。
 
-- [ ] 6.2 完成 M4 串行验收与证据报告
+- [x] 6.2 完成 M4 串行验收与证据报告
 
-2026-10-22：报告已建立，本地数据库/恢复/安全/降级及前端测试通过。前端 Docker 构建获取 `nginx:1.27-alpine` 元数据时失败（返回 `text/html`），镜像构建门禁未通过；本任务保持未完成，不关闭 M4。详见 `reviews/m4-verification.md`。
+2026-10-22：本地数据库/恢复/安全/降级及前端测试通过。前端镜像加速地址返回 HTML 的故障已定位；显式拉取相同基础版本后构建成功，修复健康接口重复响应头，容器隔离 HTTP 检查通过。最终 Git 基准已按实际建立时间登记；详见 `reviews/m4-verification.md` 及 `reviews/git-baseline-provenance.md`。本条仅指本机范围验收，不包含生产部署或归档授权。
 
 Files: `changes/m4-resilience/reviews/m4-verification.md`, `backend/scripts/m4_drill.py`, `backend/tests/integration/test_m4_recovery_drill.py`, `backend/tests/recovery/test_m4_degradation.py`
 

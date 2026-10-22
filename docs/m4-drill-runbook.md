@@ -50,6 +50,19 @@ Remove-Item Env:M4_RUN_DOCKER
 
 清单校验失败不得恢复；目标不空或身份不符不得覆盖；导入失败不开放服务，保留隔离现场或另建空目标重试。该 CLI 不负责创建生产资源、停写、加密、调度或流量切换。
 
+## 前端镜像隔离检查
+
+在仓库根目录构建当前前端并检查静态页面、健康接口和模拟 API 转发：
+
+```powershell
+docker build --pull=false -t oa-m4-resilience-frontend:local ./frontend
+./backend/.venv/Scripts/python.exe backend/scripts/m4_frontend_smoke.py
+```
+
+脚本要求本地已有前端和 `python:3.12-slim` 镜像，使用实际镜像 ID，创建唯一 internal 网络及合成后端，无挂载、无主机端口、不读取 `.env`，结束后只清理本次创建的容器和网络。退出码非零即未通过，不连接预览后端。此检查不代替浏览器业务验收。
+
+镜像 metadata 返回 `text/html` 时，先检查镜像源对应 manifest 的响应类型；不能据此判断业务代码构建失败。可显式从经核实可用的镜像源拉取 Dockerfile 的同一版本，记录 digest，确认本地目标标签不存在后再登记标签并重建。不得静默替换版本或覆盖已有标签；本次没有修改全局 Docker 配置或重启 Docker。根因和实际镜像 digest 见 M4 验收报告。
+
 ## 人工降级与补录
 
 AI 关闭后，手工发起、确定性校验、审批、查询和审计继续使用正常 OA 入口；checkpoint 保留。AI 关闭不等于本体故障恢复。本体不可用时无法提交成功命令，采用受控人工记录：
