@@ -1,0 +1,21 @@
+# Standalone project: does not create/restart the OA database or application.
+# Set CLAMAV_IMAGE to an approved image tag/digest in a private scanner env file.
+services:
+  scanner:
+    image: ${CLAMAV_IMAGE:?Set CLAMAV_IMAGE to an approved ClamAV image}
+    restart: unless-stopped
+    mem_limit: 3g
+    cpus: 1.0
+    ports:
+      - "127.0.0.1:${CLAMD_PUBLISHED_PORT:-3310}:3310"
+    volumes:
+      - signatures:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping=1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+volumes:
+  signatures:

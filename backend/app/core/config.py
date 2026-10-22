@@ -82,8 +82,8 @@ class Settings(BaseSettings):
     attachment_storage_dir: str = "data/leave_attachments"
     attachment_max_bytes: int = 10 * 1024 * 1024
     clamd_host: str = ""
-    clamd_port: int = 3310
-    attachment_scan_timeout_seconds: float = 10.0
+    clamd_port: int = Field(default=3310, ge=1, le=65535)
+    attachment_scan_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
 
     # Explicit opt-in transport; SMTP acceptance never means recipient delivery.
     smtp_enabled: bool = False

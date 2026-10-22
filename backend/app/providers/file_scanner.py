@@ -5,8 +5,8 @@ import struct
 from ..core.config import get_settings
 
 
-async def scan_bytes(content: bytes) -> str:
-    settings = get_settings()
+async def scan_bytes(content: bytes, *, settings=None) -> str:
+    settings = settings or get_settings()
     if not settings.clamd_host:
         return 'PENDING'
     try:

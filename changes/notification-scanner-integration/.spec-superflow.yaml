@@ -1,0 +1,63 @@
+# .spec-superflow.yaml — lightweight state machine
+# Progress and legacy approvals. Recover missing evidence; never infer approval from artifact existence.
+
+# === Core state ===
+state: closing
+workflow: quick
+workflow_variant: direct
+completion_outcome: verified
+completion_reason: null
+revision: null
+
+# === Hashes (fast staleness detection) ===
+artifacts_hash: null
+contract_hash: null
+
+# === Execution progress ===
+execution_mode: null
+execution_plan_hash: null
+execution_plan_revision: null
+batches_completed: 0
+test_result: pass: backend\.venv\Scripts\python.exe -m pytest backend/tests/unit/test_file_scanner.py backend/tests/unit/test_live_services.py backend/tests/unit/test_m4_safety.py backend/tests/unit/test_oa_smtp.py backend/tests/unit/test_wecom.py backend/tests/unit/test_startup_safety.py backend/tests/api/test_oa_notification.py backend/tests/api/test_oa_wecom.py backend/tests/api/test_oa_notification_http.py backend/tests/api/test_oa_leave_attachments.py backend/tests/api/test_leave_attachments.py backend/tests/api/test_oa_reimbursement.py backend/tests/integration/test_oa_notification_transports.py backend/tests/integration/test_oa_attachment_scanner.py backend/tests/integration/test_oa_notification_processes.py backend/tests/migrations/test_wecom_migration.py -q --tb=short
+spec_merged: false
+spec_publication_receipt: null
+
+# === Metadata ===
+change_name: notification-scanner-integration
+last_transition: 2026-10-22T10:01:35.888Z
+last_transition_from: null
+last_transition_to: null
+
+# === Decision points ===
+dp_0_result: null
+dp_0_timestamp: null
+dp_0_decisions: null
+dp_0_confirmed: null
+dp_1_result: null
+dp_1_timestamp: null
+dp_1_decisions: null
+dp_1_confirmed: null
+dp_2_result: null
+dp_2_timestamp: null
+dp_2_decisions: null
+dp_2_confirmed: null
+dp_3_result: null
+dp_3_timestamp: null
+dp_3_decisions: null
+dp_3_confirmed: null
+dp_4_result: null
+dp_4_timestamp: null
+dp_4_decisions: null
+dp_4_confirmed: null
+dp_5_result: null
+dp_5_timestamp: null
+dp_5_decisions: null
+dp_5_confirmed: null
+dp_6_result: null
+dp_6_timestamp: null
+dp_6_decisions: null
+dp_6_confirmed: null
+dp_7_result: null
+dp_7_timestamp: null
+dp_7_decisions: null
+dp_7_confirmed: null

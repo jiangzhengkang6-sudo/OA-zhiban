@@ -12,7 +12,7 @@ from app.ops.m4_safety import DrillTarget, UnsafeTargetError, validate_drill_tar
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _render_compose(tmp_path, *, overlay, include_password=True):
+def _render_compose(tmp_path, *, overlay, include_password=True, scanner=False):
     docker = shutil.which("docker")
     if not docker:
         pytest.skip("Docker Compose CLI is unavailable")
@@ -30,6 +30,25 @@ def _render_compose(tmp_path, *, overlay, include_password=True):
         'AUTH_ALLOWED_ORIGINS=["https://oa.example.test"]',
         "AI_ENABLED=false",
         "POSTGRES_DB=oa_m4_custom_test",
+        "SMTP_ENABLED=true",
+        "SMTP_HOST=smtp.example.test",
+        "SMTP_PORT=2525",
+        "SMTP_FROM=oa@example.test",
+        "SMTP_USERNAME=synthetic-user",
+        "SMTP_PASSWORD=synthetic-mail-secret",
+        "SMTP_STARTTLS=true",
+        "SMTP_TIMEOUT_SECONDS=12",
+        "NOTIFICATION_APP_URL=https://oa.example.test/oa/notifications",
+        "WECOM_ENABLED=true",
+        "WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-robot",
+        "WECOM_TENANT_ID=m4-synthetic",
+        "WECOM_DEPARTMENT_ID=synthetic-department",
+        "WECOM_TIMEOUT_SECONDS=8",
+        "CLAMD_HOST=scanner",
+        "CLAMD_PORT=3310",
+        "ATTACHMENT_MAX_BYTES=10485760",
+        "ATTACHMENT_SCAN_TIMEOUT_SECONDS=9",
+        "CLAMAV_IMAGE=clamav/clamav:synthetic-config-only",
     ]
     if include_password:
         values.append("POSTGRES_PASSWORD=m4-synthetic-only-password")
@@ -37,6 +56,8 @@ def _render_compose(tmp_path, *, overlay, include_password=True):
     command = [docker, "compose", "-p", "oa-m4-config-test", "--env-file", str(env_file), "-f", str(PROJECT_ROOT / "docker-compose.yml")]
     if overlay:
         command.extend(["-f", str(PROJECT_ROOT / "docker-compose.m4.yml")])
+    if scanner:
+        command.extend(["-f", str(PROJECT_ROOT / "docker-compose.scanner.yml")])
     command.extend(["config", "--format", "json"])
     return subprocess.run(
         command,
@@ -85,6 +106,48 @@ def test_base_compose_uses_one_explicit_database_name(tmp_path):
         assert services['backend']['environment'][name].endswith('/oa_m4_custom_test')
 
 
+def test_notification_and_scanner_settings_reach_container(tmp_path):
+    result = _render_compose(tmp_path, overlay=False, scanner=True)
+    assert result.returncode == 0, result.stderr
+    services = json.loads(result.stdout)['services']
+    env = services['backend']['environment']
+    expected = dict(SMTP_ENABLED='true', SMTP_HOST='smtp.example.test', SMTP_PORT='2525',
+        SMTP_FROM='oa@example.test', SMTP_USERNAME='synthetic-user', SMTP_PASSWORD='synthetic-mail-secret',
+        SMTP_STARTTLS='true', SMTP_TIMEOUT_SECONDS='12',
+        NOTIFICATION_APP_URL='https://oa.example.test/oa/notifications', WECOM_ENABLED='true',
+        WECOM_WEBHOOK_URL='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-robot',
+        WECOM_TENANT_ID='m4-synthetic', WECOM_DEPARTMENT_ID='synthetic-department',
+        WECOM_TIMEOUT_SECONDS='8', CLAMD_HOST='scanner', CLAMD_PORT='3310',
+        ATTACHMENT_MAX_BYTES='10485760', ATTACHMENT_SCAN_TIMEOUT_SECONDS='9')
+    assert {key: env[key] for key in expected} == expected
+    scanner = services['scanner']
+    assert scanner['image'] == 'clamav/clamav:synthetic-config-only'
+    assert scanner['ports'][0]['host_ip'] == '127.0.0.1'
+    assert scanner['ports'][0]['target'] == 3310
+    assert int(scanner['mem_limit']) == 3 * 1024**3
+    assert all(mount['target'] != '/app/data' for mount in scanner['volumes'])
+
+
+def test_standalone_scanner_does_not_create_oa_services_or_business_volumes(tmp_path):
+    docker = shutil.which('docker')
+    if not docker:
+        pytest.skip('Docker Compose CLI is unavailable')
+    command = [docker, 'compose', '-p', 'oa-scanner-config-test', '-f',
+               str(PROJECT_ROOT / 'docker-compose.scanner.yml'), 'config', '--format', 'json']
+    env = {key: value for key, value in os.environ.items() if key.upper() in {
+        'PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES'}}
+    env['CLAMAV_IMAGE'] = 'clamav/clamav:synthetic-config-only'
+    # An explicit empty env file also prevents loading private project .env values.
+    env_file = tmp_path / 'scanner-empty.env'
+    env_file.write_text('', encoding='utf-8')
+    command[2:2] = ['--env-file', str(env_file)]
+    result = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    rendered = json.loads(result.stdout)
+    assert set(rendered['services']) == {'scanner'}
+    assert set(rendered['volumes']) == {'signatures'}
+
+
 def test_m4_compose_config_isolated_and_does_not_publish_database_port(tmp_path):
     result = _render_compose(tmp_path, overlay=True)
 
@@ -101,6 +164,9 @@ def test_m4_compose_config_isolated_and_does_not_publish_database_port(tmp_path)
     assert backend_env["SMTP_ENABLED"] == backend_env["WECOM_ENABLED"] == "false"
     assert backend_env["OA_API_KEY"] == backend_env["ARK_API_KEY"] == ""
     assert backend_env["DEEPSEEK_API_KEY"] == backend_env["EMBEDDING_API_KEY"] == ""
+    assert backend_env['CLAMD_HOST'] == ''
+    assert backend_env['SMTP_HOST'] == backend_env['SMTP_USERNAME'] == backend_env['SMTP_PASSWORD'] == ''
+    assert backend_env['WECOM_WEBHOOK_URL'] == ''
 
 
 @pytest.fixture

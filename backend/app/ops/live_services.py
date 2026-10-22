@@ -16,6 +16,7 @@ from ..db.migrations import assert_schema_current, validate_runtime_configuratio
 from ..llm.compatible import CompatibleLLM
 from ..llm.embedding import ArkEmbedding
 from ..providers.wecom import destination
+from ..providers.file_scanner import scan_bytes
 
 
 async def database_snapshot(settings):
@@ -83,6 +84,13 @@ async def embedding_probe(settings):
     if len(vectors) != 1 or len(vectors[0]) != settings.embedding_dim:
         raise RuntimeError("embedding dimension mismatch")
     return {"provider": "ark", "dimension": len(vectors[0])}
+
+
+async def scanner_probe(settings):
+    outcome = await scan_bytes(b'OA synthetic clean attachment scanner check.\n', settings=settings)
+    if outcome != 'CLEAN':
+        raise RuntimeError('clean stream not accepted')
+    return {'clean_stream_accepted': True, 'detection_verified': False}
 
 
 async def verify_services(*, include_standby=False):
@@ -161,8 +169,11 @@ async def verify_services(*, include_standby=False):
         record("wecom_delivery", "UNVERIFIED", "no_webhook_posted")
     else:
         record("wecom_configuration", "DISABLED", "wecom_disabled")
-    record("attachment_scanner", "UNVERIFIED" if settings.clamd_host else "DISABLED",
-           "scanner_not_probed" if settings.clamd_host else "scanner_not_configured")
+    if settings.clamd_host:
+        await probe('attachment_scanner', lambda: scanner_probe(settings))
+    else:
+        record('attachment_scanner', 'DISABLED', 'scanner_not_configured')
+    record('attachment_detection', 'UNVERIFIED', 'test_signature_not_sent')
     try:
         url = urlsplit(settings.notification_app_url)
         remote_url = url.scheme == "https" and url.hostname not in {None, "localhost", "127.0.0.1", "::1"}
@@ -172,4 +183,4 @@ async def verify_services(*, include_standby=False):
     return {"checked_at": datetime.now(timezone.utc).isoformat(), "checks": checks,
             "failures": sum(item["status"] == "FAIL" for item in checks),
             "production_acceptance": False,
-            "boundary": "Read-only DB; synthetic model calls; SMTP AUTH only; no queue dispatch or notification delivery."}
+            "boundary": "Read-only DB; synthetic model and clean scanner calls; SMTP AUTH only; no queue dispatch or notification delivery."}

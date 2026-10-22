@@ -242,3 +242,16 @@ async def test_authentication_failure_uses_safe_category(configured, monkeypatch
     report = await live.verify_services()
     assert by_name(report)["smtp_authentication"]["code"] == "authentication_rejected"
     assert "private-key" not in json.dumps(report)
+
+
+@pytest.mark.parametrize('reply,status', [(b'stream: OK\0', 'PASS'), (b'engine error\0', 'FAIL')])
+async def test_scanner_preflight_uses_clean_stream_without_claiming_detection(configured, reply, status):
+    from tests.scanner_support import scanner_server
+    async with scanner_server(reply) as (port, requests):
+        configured.clamd_host, configured.clamd_port = '127.0.0.1', port
+        report = await live.verify_services()
+    checks = by_name(report)
+    assert checks['attachment_scanner']['status'] == status
+    assert checks['attachment_detection']['status'] == 'UNVERIFIED'
+    assert len(requests) == 1 and b'EICAR-' not in requests[0]['content']
+    assert report['failures'] == (0 if status == 'PASS' else 1)

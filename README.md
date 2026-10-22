@@ -126,6 +126,8 @@ EMBEDDING_DIM=1024
 
 ## 切换真实 OA
 
+通知容器配置、可选附件扫描服务与验证入口见[业务通知与附件扫描接入](docs/notification-scanner-integration.md)。
+
 当前选择自建 OA：`OA_PROVIDER=builtin`、`AUTH_PROVIDER=builtin`，无需其他企业的 OA 地址和密钥。配置见[本地正式 OA](docs/formal-oa-local-setup.md)。
 
 按 [真实 OA HTTP Bridge 契约](docs/real-oa-bridge.md) 实现企业侧 bridge，并配置 `OA_PROVIDER=real`、`OA_BASE_URL`、`OA_API_KEY`。通过 `/api/readiness` 确认必需能力后再接入业务流。没有真实沙箱时不能宣称 OA 已接通；写操作不会自动重试，必须按原幂等键先对账。
