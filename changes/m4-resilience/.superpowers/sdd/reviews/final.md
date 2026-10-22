@@ -2,37 +2,38 @@
 
 Date: 2026-10-22. Reviewer: current native executor; no reviewer subagent.
 
-- Base: `8cb8fc625d3bb1c175f17cb0321e32837171a6b2`
-- Head: `a1f7c706ce8074d5957815e3e4d46651b97d9764`
-- Verdict: **fail - outstanding required verification**, not a failed recovery test.
-- Receipt status: recording was attempted and rejected with `Final review requires an unambiguous recorded target branch`. This repository has only `codex/m1-identity-foundation` and no recorded isolation target/main/master. The range above is an explicit local review range, not a machine-certified target merge-base. No branch or provenance was fabricated to bypass the guard. Recover genuine target provenance before recording the final receipt; the code review report remains valid as a local inspection record.
+- Base: `8cb8fc625d3bb1c175f17cb0321e32837171a6b2`.
+- Implementation head: `9fe28dda555d0f3803547c042713597f861fcd7b`.
+- Receipt head: the current HEAD recorded in the machine review JSON after this report and verification-state metadata are committed. It includes the implementation above and these review records; no later implementation change is certified by this statement.
+- Verdict: **pass for the approved local synthetic scope**. No unresolved Critical/Important implementation finding was identified in the complete range. Production deployment and operational acceptance are outside this verdict.
 
-## Findings
+## Previous Findings And Resolution
 
-### Important: M4-FRONTEND-IMAGE - required container build has no passing evidence
+`01610ad` preserves the previous local failing report and the rejected receipt submission. No failed machine receipt existed: the target-branch guard rejected that submission before recording it.
 
-`frontend/Dockerfile:8` requires `nginx:1.27-alpine`. The actual Docker build failed while resolving that image's Docker Hub metadata with `encountered unknown type text/html; children may not be fetched`; a retry failed again. Local frontend build and 119 tests passed but do not prove the container image builds. The approved upgrade/rollback requirement includes image build. Task 6.2 and AC-G5 remain partial, so final acceptance cannot pass. No old image, alternate base, or production deployment was used to conceal the gap.
+**M4-FRONTEND-IMAGE resolved:** the configured registry mirror returned HTML for an nginx manifest. Exact-version Node/nginx images were explicitly pulled from a working mirror and their digests recorded. The existing Dockerfile builds successfully with `--pull=false`. No base-version substitution, global Docker modification or Docker restart was performed. Final image: `sha256:1514333a5b0683734a4892c16478632c177106a638bb02f5797dac488eb1ba86`.
 
-Resolution: when registry metadata can be fetched, build the unchanged frontend Dockerfile, verify its artifact/runtime in a dedicated local environment, update task 6.2 and the verification report, then re-review the original complete range plus any fixes. Preserve this failed receipt; do not repeat identical failed review submissions.
+The new HTTP check first exposed duplicate Content-Type headers at `/healthz`. `default_type text/plain` replaces the extra header. Rebuild and synthetic internal-network verification passed: health body and one header, root/SPA route, JavaScript/CSS assets and MIME types, GET query/header forwarding, POST body, backend 404, backend-outage 502 and independent static health. Temporary container/network cleanup was verified. This does not claim new browser interaction testing.
 
-No additional blocking code defect was found in the reviewed range. This statement does not convert the verification gap into a pass.
+**Review target registration resolved prospectively:** at 2026-10-22T16:09:13+08:00, local `main` was newly created at the existing root baseline under the user's approved baseline-registration scope. See `reviews/git-baseline-provenance.md`. There was no historic main branch or isolation context; none is claimed. The plugin's legacy/manual single-trunk fallback now derives the complete merge-base. Current development remains on `codex/m1-identity-foundation`; no integration is authorized or performed.
 
 ## Scope And Evidence
 
-Reviewed the complete 27-file diff from base to head: production credential/target validation, Compose auth and managed files, isolated target execution, archive completeness/hash/path protection, independent empty restore, recovery metrics/CLI, integration/degradation/security/migration tests, runbooks and workflow evidence.
+Reviewed the original complete base-to-implementation range plus focused fixes: production database credentials/consistent target validation, Compose auth and managed files, isolated target execution, archive completeness/hash/path protection, independent empty restore, recovery metrics/CLI, integration/degradation/security/migration tests, frontend runtime configuration, repeatable smoke script, runbooks, canonical resilience spec and workflow evidence. Earlier range inspection was retained and extended; the range was not narrowed to the last commit.
 
-- 107 host unit regressions passed. Split database host/port/name cases first failed, then passed after the fail-closed fix. Default PostgreSQL port is normalized; separate credentials are permitted.
-- Final Docker recovery test passed in 213.28 seconds. Embedded selected regression suite: 81 passed in 41.60 seconds. Login/history/attachment/approval/checkpoint/knowledge/audit/readiness checks and idempotent replay passed.
-- Evidence: `data/m4-drills/evidence-6aeb180e9675`; RPO 2s, RTO 7s under the documented synthetic local conditions. Final backend image ID is recorded in `reviews/m4-verification.md`.
-- Application rollback tested baseline backend source against schema `0029`, including read/write/approval/replay. Unknown or incompatible combinations are refused; database downgrade is not used.
-- Native frontend build passed; 25 test files / 119 tests passed. Frontend image build failed as described above. `git diff --check` passed.
+- 107 host unit regressions passed. Database host/port/name mismatches failed before the fix and pass by rejection afterward. Default port normalization and separate credentials are covered.
+- Final Docker recovery test: 1 passed / 213.28 seconds; 81 embedded selected regressions / 41.60 seconds. Login/history/attachments/approval/checkpoint/knowledge/audit/readiness and idempotent replay passed.
+- Evidence: `data/m4-drills/evidence-6aeb180e9675`; measured local RPO 2s and RTO 7s. Exact timing, data volume and image IDs are in `reviews/m4-verification.md`.
+- Baseline backend application rollback against schema `0029` passed read/write/approval/replay. Unknown/incompatible versions are refused. No database downgrade occurred.
+- Frontend native build and 25 files / 119 tests passed; final container build and HTTP checks passed after the health-header correction. `git diff --check` passed.
+- Explicit project/target validation precedes writes; source/occupied/unknown restore destinations are refused; component/path/hash completeness is checked; real configuration is excluded. CLI scope remains synthetic local data with external providers disabled/mocked.
 
-The code preserves explicit project/target validation before writes, rejects source/occupied/unknown restore destinations, checks component/path/hash integrity, excludes real environment configuration from drills, mocks external providers and retains atomic authorization/transaction boundaries. Operational documents restrict the CLI to local synthetic drills and avoid source database restore/cleanup.
+## Nonblocking Follow-Up And Limits
 
-## Provenance And Limits
+Development dependency audit reports 6 findings (3 moderate, 1 high, 2 critical) in Vite/Vitest and their transitive tooling. Production dependency audit reports zero. The runtime stage contains nginx and static output, not Node development/test services. Track a separately tested tooling upgrade; this review does not certify all development dependencies or base-image vulnerability scanning. Do not expose development/test servers externally.
 
-Batch 1 already existed at the base commit. Its source snapshot was inspected as supplemental context; `reviews/batch1-review.md` records its original verification without a fabricated historical Git receipt. Only the actual base-to-head diff above is certified as the reviewed change range.
+Batch 1 already existed at the base commit. Its snapshot and `reviews/batch1-review.md` were inspected as supplemental context; no historical pre-baseline diff or review receipt is fabricated. The machine receipt certifies only the actual base-to-head range.
 
-Prompt injection coverage is a deterministic authorization-gate regression, not comprehensive model red teaming. The backup uses static synthetic data, not concurrent production writes. RTO starts after the independent destination database is provisioned. Manual record signing/organization, real services, production capacity, HTTPS/network configuration, historical production images, offsite recovery and recurring backups are unverified.
+Prompt-injection coverage tests deterministic authorization gates, not comprehensive model red teaming. Backup data is static and synthetic. Recovery timing starts with the independent destination DB already provisioned. Real services/models/scanner, organizational manual drills, HTTPS/network controls, production capacity, historical production images, concurrent backup consistency, encrypted offsite recovery and recurring backups remain unverified.
 
-No real `.env`, preview database, external message/model call, production resource, remote push or merge was used. User PRD files remain untracked. Delta spec publication and logical closure are deferred because required verification remains open; there is no archive authorization receipt.
+No real `.env`, preview database, external business message/model call, production resource, push or merge was used. User PRDs remain untracked. Canonical resilience specs were synchronized while executing. Archive authorization is not inferred; local branch delivery is complete independently of later archive/integration decisions.

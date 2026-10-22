@@ -17,8 +17,8 @@ contract_hash: sha256:b95aa823444f9a64cb5ae7108d3a0f0a9b19f4a748f3704dcc53cda75e
 execution_mode: inline
 execution_plan_hash: sha256:d03fe9851ecae2f89afe869b1d463c76f337ff69fb3cc06082eb26edfcdf8fe5
 execution_plan_revision: 3
-batches_completed: 0
-test_result: fail
+batches_completed: 6
+test_result: pass
 spec_merged: true
 spec_publication_receipt: eyJ2ZXJzaW9uIjoxLCJzb3VyY2VfaGFzaCI6InNoYTI1Njo5ZjdmZDA4YTAxZjc5NDgwM2EwNzU4YWU3Y2JhY2ZlM2UwZmRmMTBlN2MwMmU0MmUwYjM4NTg2ZDE1Y2QwZGIxIiwiYmFzZWxpbmVfYmVmb3JlX2hhc2giOiJzaGEyNTY6NzMzNWNhYTU3NjNhNGEwYzZiZjU4ZTU1YmFkZTMzNTI5MTBjN2E5YTI1NDJmMjVlZDFjMWI2NWNkNTlmNzM3YiIsImJhc2VsaW5lX2FmdGVyX2hhc2giOiJzaGEyNTY6MGNhODlhNWExOTNmYmUyOTI5MGE0YTlkOGM5YmY1MWQzOGQ3MWJjZjE2YTc2MzM0YWYxZmZiZjZiNGMxMmEwYSIsImNhcGFiaWxpdGllcyI6WyJyZXNpbGllbmNlIl19
 
@@ -53,8 +53,8 @@ dp_5_result: null
 dp_5_timestamp: null
 dp_5_decisions: null
 dp_5_confirmed: null
-dp_6_result: incomplete: frontend Docker image metadata fetch failed; local 107 host tests, Docker recovery and 81 embedded tests, frontend build and 119 tests passed; final review receipt cannot be recorded without historical target branch provenance
-dp_6_timestamp: 2026-10-22T08:01:26.610Z
+dp_6_result: passed: approved local synthetic scope; 107 host tests, Docker recovery and 81 embedded regressions, frontend build and 119 tests, frontend image build and isolated HTTP runtime checks passed; prospective baseline registered with actual timestamp; production scope remains unverified
+dp_6_timestamp: 2026-10-22T08:22:43.003Z
 dp_6_decisions: null
 dp_6_confirmed: null
 dp_7_result: null
