@@ -1,6 +1,6 @@
 # OA 智能体管理系统 MVP
 
-部门 OA 正式化（更新：2026-10-20）：[PRD V1.5](OA智能体管理系统-正式PRD-V1.5.md)、[实施计划](docs/部门OA正式化实施计划-V1.1.md)、[M1 验收与启动说明](docs/m1-identity-acceptance.md)、[M2 验收与启动说明](docs/m2-manual-oa-acceptance.md)。M1/M2 与 M3 批准的本地工程范围已完成验证；M4 安全、备份、恢复、降级和部署演练仍未完成。
+部门 OA 正式化（更新：2026-10-22）：[PRD V1.5](OA智能体管理系统-正式PRD-V1.5.md)、[实施计划](docs/部门OA正式化实施计划-V1.1.md)、[M1 验收与启动说明](docs/m1-identity-acceptance.md)、[M2 验收与启动说明](docs/m2-manual-oa-acceptance.md)。M1/M2/M3 和 [M4 本机隔离范围](changes/m4-resilience/reviews/m4-verification.md)已完成验证，生产部署尚未验收。当前使用[本地正式账号及内置 OA](docs/formal-oa-local-setup.md)，模型和通知的最新状态见[真实服务联调记录](docs/live-service-verification.md)；前端依赖安全升级见[工具链验证](docs/frontend-toolchain-verification.md)。以下独立预览记录属于历史阶段。
 
 M3 [开发契约已获批准](changes/department-oa-business/execution-contract.md)，包括报销、正式工单、站内/SMTP、13 项核心桥接及 AI/P2/P3 正式权限；[验收报告](changes/department-oa-business/reviews/verification.md)和[继续入口](changes/department-oa-business/planning-status.md)。B1-B7 的批准本地范围已完成实施者串行验证，未宣称生产上线。
 
@@ -111,8 +111,8 @@ Remove-Item Env:ALLOW_TEST_DATABASE_RESET
 Docker Compose 使用根目录 `.env`。完整配置见 [模型配置](docs/model-configuration.md)。
 
 ```
-LLM_PROVIDER=ark
-LLM_FALLBACK_PROVIDER=none
+LLM_PROVIDER=deepseek
+LLM_FALLBACK_PROVIDER=ark
 DEEPSEEK_API_KEY=<你的 DeepSeek API Key>
 DEEPSEEK_CHAT_MODEL=deepseek-flash
 ARK_API_KEY=<你的火山方舟 API Key>
@@ -122,8 +122,10 @@ ARK_EMBEDDING_MODEL=doubao-embedding-vision-251215
 EMBEDDING_DIM=1024
 ```
 
-DeepSeek 暂不可用，恢复后可切回 `deepseek` 主用、`ark` 兜底。首次切换真实嵌入需同步数据库列维度并重建已有向量，见模型配置文档。
+2026-10-22 已验证 DeepSeek 和豆包结构化输出，当前本地配置为 DeepSeek 主用、豆包兜底，真实嵌入为 1024 维。首次切换嵌入模型需核对数据库列维度并重建已有向量，见模型配置文档。
 
 ## 切换真实 OA
+
+当前选择自建 OA：`OA_PROVIDER=builtin`、`AUTH_PROVIDER=builtin`，无需其他企业的 OA 地址和密钥。配置见[本地正式 OA](docs/formal-oa-local-setup.md)。
 
 按 [真实 OA HTTP Bridge 契约](docs/real-oa-bridge.md) 实现企业侧 bridge，并配置 `OA_PROVIDER=real`、`OA_BASE_URL`、`OA_API_KEY`。通过 `/api/readiness` 确认必需能力后再接入业务流。没有真实沙箱时不能宣称 OA 已接通；写操作不会自动重试，必须按原幂等键先对账。

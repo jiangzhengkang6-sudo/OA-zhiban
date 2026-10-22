@@ -11,6 +11,7 @@
 - `AUTH_TENANT_ID=local`：沿用现有数据库，不清库、不导入 Mock 员工和业务。
 - 保留模型、嵌入和 SMTP 凭据；通知链接修正为 5182。
 - 增量模板：`backend/.env.formal-oa.example`。不得用它覆盖含密钥的 `.env`。
+- 2026-10-22 已恢复 DeepSeek 主用、豆包兜底，并补齐真实嵌入开关及 1024 维配置。模型、数据库、邮件认证和企业微信绑定检查见[联调记录](live-service-verification.md)。
 
 ## 账号与收件授权
 
@@ -33,4 +34,4 @@
 
 ## 上线前
 
-当前只监听本机 HTTP，`AUTH_COOKIE_SECURE=false` 只适用于 loopback 开发。对外部署必须使用 HTTPS、精确 HTTPS 来源、Secure Cookie、数据库强口令以及备份恢复验证。附件扫描未配置时继续阻止未扫描附件提交；审批流程、额度和工单分派规则需要按实际业务配置发布。企业微信群机器人代码已接入通知队列，配置和本人授权默认关闭，操作步骤见 `docs/wecom-notifications.md`；真实群投递仍需验证。钉钉尚未接通。
+当前使用本机 HTTP，`AUTH_COOKIE_SECURE=false` 只适用于 loopback 开发。对外部署必须使用 HTTPS、精确 HTTPS 来源、Secure Cookie、数据库强口令以及备份恢复验证。附件扫描未配置时继续阻止未扫描附件提交；审批流程、额度和工单分派规则需要按实际业务配置发布。企业微信群机器人已启用并绑定项目部门，此前单次测试被接口接受；业务队列投递和成员实际收到提醒仍需核验，操作步骤见 `docs/wecom-notifications.md`。钉钉尚未接通，当前采用企业微信无需重复接入。

@@ -1,7 +1,8 @@
 # 模型配置
 
-文本和嵌入均已启用真实模型。2026-10-15 按用户要求临时改为豆包（ARK）主用，
-停用 DeepSeek 兜底；保留其凭据，恢复后再切回。OA、身份和业务数据仍使用 Mock。
+2026-10-22：本地后端使用 DeepSeek 主用、豆包（ARK）兜底及真实 ARK 1024 维嵌入，
+OA 和身份均为 builtin。2026-10-15 的豆包临时主用记录保留在历史验证文档中。
+最新探测结果与未验证事项见[真实服务联调记录](live-service-verification.md)。
 
 ## 启用
 
@@ -9,8 +10,8 @@
 将 `backend/.env.llm.example` 中的条目合并到对应配置文件，保留原有数据库及 OA 配置：
 
 ```dotenv
-LLM_PROVIDER=ark
-LLM_FALLBACK_PROVIDER=none
+LLM_PROVIDER=deepseek
+LLM_FALLBACK_PROVIDER=ark
 LLM_TIMEOUT_SECONDS=10
 MEETING_LLM_TIMEOUT_SECONDS=45
 DEEPSEEK_BASE_URL=https://api.deepseek.com
@@ -41,7 +42,7 @@ DeepSeek 默认使用非思考模式，避免主备工具调用历史包含不�
 本地也兼容用户已填写的别名：`DEEPSEEK_MODEL`、`DOUBAO_API_KEY`、
 `DOUBAO_BASE_URL`、`DOUBAO_MODEL_NAME`、`EMBEDDING_MODEL`。
 同一项同时填写时，以标准名称为准；Compose 使用上面展示的标准名称。
-DeepSeek 恢复后将 `LLM_PROVIDER=deepseek`、`LLM_FALLBACK_PROVIDER=ark`，再重启后端。
+若临时调整主备顺序，修改配置后须重启后端；联调工具只核验，不自动改写配置或切换主备。
 
 ## 接入范围
 
@@ -79,7 +80,10 @@ DeepSeek 恢复后将 `LLM_PROVIDER=deepseek`、`LLM_FALLBACK_PROVIDER=ark`，�
 配置与数据库列均为 1024 维。实测当前模型不接受 1536 维，1024 维调用通过。
 多模态接口的一组输入只生成一个融合向量，因此每段文本单独请求，保持片段与向量对应。
 
-旧开发库 2 个片段已重建，预览库列维度已同步调整；FAQ 修复复测时已有 1 份文档、2 个片段。
+2026-10-22 发现本地 `.env` 缺少嵌入开关及维度，导致回退为 Mock/1536，
+而现有数据库为 `vector(1024)`；已补齐 `EMBEDDING_PROVIDER=ark` 与 `EMBEDDING_DIM=1024`。
+本次只核对 3 个片段的维度及真实接口，没有改写已有向量；现有结构未登记每个向量的模型来源，
+不能凭维度相同确认语义兼容。旧开发库重建记录属于历史验证。
 切换嵌入模型或维度后，
 即使维度相同也必须重新生成已有向量，不能混用不同模型或 Mock 向量。
 从 `backend/` 运行：
@@ -96,9 +100,10 @@ python scripts/reindex_knowledge.py --apply  # 真实请求并重建，按模型
 
 ## 验证边界
 
-离线测试覆盖路由、预算、敏感响应隐藏及知识权限过滤；真实调用已验证嵌入、
-中文语义检索、基于来源的结构化回答及豆包工具调用。DeepSeek 生成暂不可用，
-按用户要求临时停用。少量冒烟测试不能替代完整业务质量、限流及负载验收。
+离线测试覆盖路由、预算、敏感响应隐藏及知识权限过滤。2026-10-22 的真实探测验证了
+DeepSeek 和豆包的结构化 JSON 输出、真实嵌入接口及数据库维度；中文语义检索、
+来源回答和豆包工具调用的旧记录属于历史证据，本次没有重跑完整业务流程。
+少量探测不能替代业务质量、工具调用能力、限流及负载验收。
 
 接口依据（2026-10-15 查阅）：
 
