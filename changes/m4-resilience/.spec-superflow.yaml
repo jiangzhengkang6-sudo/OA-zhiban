@@ -10,7 +10,7 @@ completion_reason: null
 revision: 3
 
 # === Hashes (fast staleness detection) ===
-artifacts_hash: sha256:b99908cc0f1ad3ba1ab703797605e587165cccbbf65d02b96adb0bfa3aa5d608
+artifacts_hash: sha256:0d39c68fc0646c11fd33d14fc7fc421b920d1f8da20655876939ab1c0653f41c
 contract_hash: sha256:b95aa823444f9a64cb5ae7108d3a0f0a9b19f4a748f3704dcc53cda75e1b969a
 
 # === Execution progress ===
@@ -24,7 +24,7 @@ spec_publication_receipt: eyJ2ZXJzaW9uIjoxLCJzb3VyY2VfaGFzaCI6InNoYTI1Njo5ZjdmZD
 
 # === Metadata ===
 change_name: m4-resilience
-last_transition: 2026-10-22T03:58:35.400Z
+last_transition: 2026-10-22T08:29:25.292Z
 last_transition_from: approved-for-build
 last_transition_to: executing
 
