@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "available_modes": [
+    "full",
+    "hotfix",
+    "tweak",
+    "quick",
+    "lightweight"
+  ],
+  "facts": {
+    "task_count": 13,
+    "file_count": 22,
+    "config_doc_only": "no",
+    "schema_api_change": "no",
+    "new_module": "yes",
+    "behavioral_constraint_change": "yes",
+    "cross_module_change": "yes",
+    "uncertainty": "high",
+    "request_kind": "standard",
+    "affected_paths": null,
+    "exclusion_checks": {
+      "production_behavior": "unknown",
+      "public_boundary": "unknown",
+      "installer": "unknown",
+      "state_machine": "unknown",
+      "external_side_effect": "unknown",
+      "data_permission_config_semantics": "unknown",
+      "expected_behavior_clear": "unknown",
+      "verification_reproducible": "unknown",
+      "impact_paths_complete": "unknown"
+    }
+  },
+  "missing_facts": [],
+  "status": "ready",
+  "recommendation": {
+    "mode": "full",
+    "reasons": [
+      "Risk signals require the user to choose Quick or Full."
+    ],
+    "risk_reasons": [
+      "behavioral constraint changed (PRD, spec, design, data, or permission)",
+      "new module",
+      "cross-module change",
+      "high uncertainty"
+    ]
+  },
+  "created_at": "2026-10-22T03:40:11.347Z",
+  "selection": {
+    "authorization_id": "6172b12d-c41e-4b2f-92e0-758bf37d2406",
+    "mode": "full",
+    "reason": "按已批准的M4安全与恢复范围继续，CLI推荐full",
+    "followed_recommendation": true,
+    "acknowledged_non_recommendation": false,
+    "accepted_automatically": false,
+    "risk_override": false,
+    "verification_strategy": null,
+    "scope_confirmation": null,
+    "verification_result": null,
+    "escalation_reason": null,
+    "confirmed_at": "2026-10-22T03:41:29.891Z",
+    "selected_at": "2026-10-22T03:41:29.891Z"
+  },
+  "hash": "sha256:9286f4e5b9bdce2dc98707d9afbbf1f93dffdb9a3becc2af712c46181384333d"
+}

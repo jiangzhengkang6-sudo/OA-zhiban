@@ -1,0 +1,34 @@
+.draft-workbench { max-width: 1380px; padding: 24px; margin: auto; color: #293b47; letter-spacing: 0; }
+.draft-workbench h1 { font-size: 26px; margin: 0 0 8px; overflow-wrap: anywhere; }
+.draft-workbench h2 { font-size: 18px; margin: 0 0 18px; }
+.draft-workbench h3 { font-size: 14px; }
+.draft-workbench .heading { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 24px; align-items: flex-start; }
+.draft-workbench .muted { color: #697883; font-size: 13px; }
+.draft-workbench .heading p { margin: 0; }
+.draft-workbench .draft-layout { display: grid; grid-template-columns: minmax(260px,.8fr) minmax(0,1.2fr); gap: 28px; }
+.draft-workbench .draft-layout > section { min-width: 0; }
+.draft-workbench .draft-layout > section + section { border-left: 1px solid #dce3e7; padding-left: 28px; }
+.draft-workbench .el-form-item { margin-bottom: 20px; }
+.draft-workbench .el-select { width: 100%; }
+.draft-workbench .full-width { width: 100%; }
+.draft-workbench .el-alert { margin-bottom: 16px; }
+.draft-workbench .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.draft-workbench .toolbar .el-button { margin: 0; }
+.draft-workbench .acknowledgments { display: flex; flex-direction: column; gap: 8px; margin: 20px 0; }
+.draft-workbench .acknowledgments .el-checkbox { height: auto; min-height: 32px; white-space: normal; }
+.draft-workbench .acknowledgments .el-checkbox__label { white-space: normal; line-height: 1.6; }
+.draft-workbench .record-row { display: flex; justify-content: space-between; gap: 16px; width: 100%; padding: 16px 0; border: 0; border-bottom: 1px solid #dce3e7; background: transparent; text-align: left; cursor: pointer; color: #293b47; }
+.draft-workbench .record-row:hover { color: #16796b; background: #f4f8f7; }
+.draft-workbench .record-row span { overflow-wrap: anywhere; }
+.draft-workbench .record-row small { display: block; color: #697883; margin-top: 6px; }
+.draft-workbench .source { border-top: 1px solid #dce3e7; padding: 12px 0; }
+.draft-workbench .source p,.draft-workbench .mail-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+.draft-workbench .source small { color: #697883; overflow-wrap: anywhere; }
+.draft-workbench .metadata-list { display: grid; grid-template-columns: 90px minmax(0,1fr); font-size: 14px; gap: 10px; margin-bottom: 24px; }
+.draft-workbench .metadata-list dt { color: #697883; } .draft-workbench .metadata-list dd { margin: 0; overflow-wrap: anywhere; }
+.draft-workbench .todo-row { border-top: 1px solid #dce3e7; padding: 16px 0; }
+.draft-workbench .todo-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
+.draft-workbench .field-label { display: block; font-size: 13px; color: #697883; margin: 12px 0 6px; }
+.draft-workbench .attachment-row { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+@media(max-width: 950px) { .draft-workbench .draft-layout { grid-template-columns: 1fr; } .draft-workbench .draft-layout > section + section { border-left: 0; border-top: 1px solid #dce3e7; padding-left: 0; padding-top: 24px; } }
+@media(max-width: 600px) { .draft-workbench { padding: 16px; } .draft-workbench .heading { flex-direction: column; } .draft-workbench .todo-grid { grid-template-columns: 1fr; } .draft-workbench .attachment-row { flex-wrap: wrap; } }

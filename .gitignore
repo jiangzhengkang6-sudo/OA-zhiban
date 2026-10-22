@@ -1,0 +1,36 @@
+# Local snapshots and credentials must never enter source control.
+data/backups/
+data/verification/
+.env
+backend/.env
+output/formal-oa-private/
+
+# Private configuration and credentials (sanitized examples remain tracked).
+.env.*
+!.env*.example
+!**/.env*.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local runtimes, generated files and user data.
+**/.venv/
+**/node_modules/
+**/__pycache__/
+**/.pytest_cache/
+**/dist/
+**/test-results/
+**/playwright-report/
+*.pyc
+*.log
+*.tsbuildinfo
+/frontend/vite.config.js
+/frontend/vite.config.d.ts
+/data/
+/backend/data/
+/frontend/data/
+/output/
+/.trae/
+/.workbuddy/
+/.worktrees/

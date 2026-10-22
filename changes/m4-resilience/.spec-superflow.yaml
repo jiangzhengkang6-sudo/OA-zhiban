@@ -1,0 +1,63 @@
+# .spec-superflow.yaml — lightweight state machine
+# Progress and legacy approvals. Recover missing evidence; never infer approval from artifact existence.
+
+# === Core state ===
+state: executing
+workflow: full
+workflow_variant: legacy
+completion_outcome: null
+completion_reason: null
+revision: 3
+
+# === Hashes (fast staleness detection) ===
+artifacts_hash: sha256:b99908cc0f1ad3ba1ab703797605e587165cccbbf65d02b96adb0bfa3aa5d608
+contract_hash: sha256:b95aa823444f9a64cb5ae7108d3a0f0a9b19f4a748f3704dcc53cda75e1b969a
+
+# === Execution progress ===
+execution_mode: inline
+execution_plan_hash: sha256:cf0b90a60994248c3c18b1084e9752c413ca370c6fe61fcfa1be52a84fb0c428
+execution_plan_revision: 3
+batches_completed: 0
+test_result: null
+spec_merged: false
+spec_publication_receipt: null
+
+# === Metadata ===
+change_name: m4-resilience
+last_transition: 2026-10-22T03:58:35.400Z
+last_transition_from: approved-for-build
+last_transition_to: executing
+
+# === Decision points ===
+dp_0_result: confirmed
+dp_0_timestamp: 2026-10-22T03:44:00Z
+dp_0_decisions: M4限定为本机隔离安全与恢复演练；合成数据、独立临时资源；不接触M1/M2/M3预览资源、真实密钥、真实外部服务或生产服务器；沿用已有批准范围，中文沟通
+dp_0_confirmed: true
+dp_1_result: null
+dp_1_timestamp: null
+dp_1_decisions: null
+dp_1_confirmed: null
+dp_2_result: approved: existing M4 proposal/specs/design/tasks reviewed and approved in the conversation by 2026-10-20; user renewed continuation on 2026-10-22; no scope expansion
+dp_2_timestamp: 2026-10-22T03:44:00Z
+dp_2_decisions: null
+dp_2_confirmed: true
+dp_3_result: approved: M4本机隔离安全与恢复演练；仅合成数据及专用资源；不触碰预览库、真实密钥、外部服务或生产服务器；禁止数据库降级
+dp_3_timestamp: 2026-10-22T03:42:42Z
+dp_3_decisions: null
+dp_3_confirmed: null
+dp_4_result: inline: plan revision 3; user-confirmed-revision; 沿用用户已批准的 M4 范围与已确认的 inline 模式；仅同步任务格式和契约状态说明修订，无行为范围变化
+dp_4_timestamp: 2026-10-22T03:58:04.537Z
+dp_4_decisions: null
+dp_4_confirmed: null
+dp_5_result: null
+dp_5_timestamp: null
+dp_5_decisions: null
+dp_5_confirmed: null
+dp_6_result: null
+dp_6_timestamp: null
+dp_6_decisions: null
+dp_6_confirmed: null
+dp_7_result: null
+dp_7_timestamp: null
+dp_7_decisions: null
+dp_7_confirmed: null

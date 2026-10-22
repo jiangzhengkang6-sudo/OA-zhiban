@@ -1,0 +1,82 @@
+# OA 智能体管理系统 MVP - 数据库与依赖编排
+# 使用 pgvector 官方镜像（内置 vector 扩展），一键启动 PostgreSQL 16。
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: oa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: oa_agent
+    ports:
+      - "5433:5432"
+    volumes:
+      - oa_pgdata:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oa -d oa_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-mock}
+      OA_PROVIDER: ${OA_PROVIDER:-mock}
+      OA_BASE_URL: ${OA_BASE_URL:-}
+      OA_API_KEY: ${OA_API_KEY:-}
+      OA_TIMEOUT_SECONDS: ${OA_TIMEOUT_SECONDS:-10}
+      OA_READ_RETRIES: ${OA_READ_RETRIES:-2}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-ark}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-10}
+      MEETING_LLM_TIMEOUT_SECONDS: ${MEETING_LLM_TIMEOUT_SECONDS:-45}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-flash}
+      ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      ARK_CHAT_MODEL: ${ARK_CHAT_MODEL:-}
+      ARK_THINKING_TYPE: ${ARK_THINKING_TYPE:-default}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+      ARK_EMBEDDING_MODEL: ${ARK_EMBEDDING_MODEL:-doubao-embedding-large}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_TIMEOUT_SECONDS: ${EMBEDDING_TIMEOUT_SECONDS:-30}
+      DATABASE_URL: postgresql+asyncpg://oa:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-oa_agent}
+      DATABASE_SYNC_URL: postgresql+psycopg://oa:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-oa_agent}
+      CHECKPOINTER_URL: postgresql://oa:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-oa_agent}
+      ALLOW_TEST_DATABASE_RESET: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-5173}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  oa_pgdata:

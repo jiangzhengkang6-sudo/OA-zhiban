@@ -1,0 +1,33 @@
+services:
+  db:
+    hostname: m4-db
+    ports: !reset []
+    environment:
+      POSTGRES_DB: ${M4_DATABASE_NAME:?M4_DATABASE_NAME must be set}
+
+  backend:
+    environment:
+      ENVIRONMENT: test
+      AUTH_PROVIDER: mock
+      OA_PROVIDER: mock
+      OA_BASE_URL: ""
+      OA_API_KEY: ""
+      LLM_PROVIDER: mock
+      LLM_FALLBACK_PROVIDER: none
+      DEEPSEEK_API_KEY: ""
+      ARK_API_KEY: ""
+      EMBEDDING_PROVIDER: mock
+      EMBEDDING_API_KEY: ""
+      SMTP_ENABLED: "false"
+      SMTP_HOST: ""
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      WECOM_ENABLED: "false"
+      WECOM_WEBHOOK_URL: ""
+      CLAMD_HOST: ""
+      DATABASE_URL: ${M4_DATABASE_URL:?M4_DATABASE_URL must be set}
+      DATABASE_SYNC_URL: ${M4_DATABASE_SYNC_URL:?M4_DATABASE_SYNC_URL must be set}
+      CHECKPOINTER_URL: ${M4_CHECKPOINTER_URL:?M4_CHECKPOINTER_URL must be set}
+
+volumes:
+  oa_pgdata: {}

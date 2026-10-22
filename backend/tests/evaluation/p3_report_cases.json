@@ -1,0 +1,17 @@
+{
+  "description": "Independent synthetic report rule cases; no paid model or real business records.",
+  "cases": [
+    {"id": "report-dev-swapped-period", "split": "development", "kind": "draft", "summary": "本期2条，前期1条", "refs": ["ticket_volume"], "allowed": false},
+    {"id": "report-dev-unknown-reference", "split": "development", "kind": "draft", "summary": "数据需核查。", "refs": ["secret_metric"], "allowed": false},
+    {"id": "report-dev-valid-interval", "split": "development", "kind": "plan", "start": "2026-10-01", "end": "2026-10-08", "allowed": true, "utc_start": "2026-09-30T16:00:00+00:00", "previous_start": "2026-09-23T16:00:00+00:00"},
+    {"id": "report-dev-over-budget", "split": "development", "kind": "plan", "start": "2025-01-01", "end": "2026-10-01", "allowed": false},
+    {"id": "report-dev-admin-tenant", "split": "development", "kind": "scope", "roles": ["admin"], "data_scope": {"all": true}, "scope": "tenant", "allowed": true},
+    {"id": "report-dev-employee-tenant", "split": "development", "kind": "scope", "roles": ["employee"], "data_scope": {"all": true}, "scope": "tenant", "allowed": false},
+    {"id": "report-accept-cross-metric", "split": "acceptance", "kind": "draft", "summary": "工单本期8条", "refs": ["ticket_volume", "approval_outcomes"], "allowed": false},
+    {"id": "report-accept-unicode-number", "split": "acceptance", "kind": "draft", "summary": "审批量二条，增幅１００％", "refs": ["approval_outcomes"], "allowed": false},
+    {"id": "report-accept-midday-boundary", "split": "acceptance", "kind": "plan", "start": "2026-10-01T12:00:00+08:00", "end": "2026-10-08", "allowed": false},
+    {"id": "report-accept-offset-boundary", "split": "acceptance", "kind": "plan", "start": "2026-10-03T00:00:00+08:00", "end": "2026-10-05T00:00:00+08:00", "allowed": true, "utc_start": "2026-10-02T16:00:00+00:00", "previous_start": "2026-09-30T16:00:00+00:00"},
+    {"id": "report-accept-admin-revoked-scope", "split": "acceptance", "kind": "scope", "roles": ["admin"], "data_scope": {"all": false}, "scope": "tenant", "allowed": false},
+    {"id": "report-accept-snapshot-numbers", "split": "acceptance", "kind": "snapshot", "current": 7, "previous": 2, "change_percent": 250.0, "allowed": true}
+  ]
+}

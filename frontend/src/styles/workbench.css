@@ -1,0 +1,63 @@
+:root { --oa-primary: #0f766e; --oa-ink: #17324d; --oa-muted: #607487; --oa-border: #dce5ed; --oa-surface: #fff; --el-color-primary: #0f766e; }
+body { margin: 0; color: var(--oa-ink); font-family: 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif; }
+.workbench { max-width: 1200px; margin: 0 auto; animation: appear 180ms ease-out; }
+.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 24px; }
+.page-heading h1 { margin: 4px 0 8px; font-size: clamp(24px, 3vw, 30px); letter-spacing: -.02em; }
+.page-heading p { margin: 0; }
+.eyebrow { color: var(--oa-primary); font-size: 12px; font-weight: 600; }
+.muted, .task-card small { color: var(--oa-muted); font-size: 13px; line-height: 1.7; }
+.filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 24px; }
+.filters .el-select { width: 180px; }
+.surface { margin-top: 20px; border: 1px solid var(--oa-border); border-radius: 12px; background: var(--oa-surface); }
+.task-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 16px; }
+.task-card { padding: 24px; border-radius: 12px; border: 1px solid var(--oa-border); background: var(--oa-surface); transition: border-color 160ms ease, box-shadow 160ms ease; }
+.task-card:hover { border-color: #a9cbc7; box-shadow: 0 4px 16px rgba(23,50,77,.04); }
+.task-heading, .task-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.task-card h3 { margin: 16px 0 8px; font-size: 18px; }
+.task-card p { font-size: 13px; line-height: 1.7; margin-bottom: 20px; }
+.task-footer { border-top: 1px solid #edf1f5; padding-top: 16px; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.actions .el-button + .el-button { margin-left: 0; }
+.pause-reason { color: #9a5f14; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 0 24px; }
+.form-actions { justify-content: flex-end; padding-top: 16px; border-top: 1px solid #edf1f5; }
+.attachment-panel { margin: 24px 0; padding-top: 20px; border-top: 1px solid var(--oa-border); }
+.attachment-panel h2 { margin: 0; font-size: 16px; }
+.attachment-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 16px 0; font-size: 14px; }
+.attachment-upload input { max-width: 100%; font: inherit; }
+.attachment-upload input::file-selector-button { min-height: 44px; margin-right: 12px; padding: 8px 16px; border: 1px solid var(--oa-border); border-radius: 8px; background: var(--oa-surface); color: var(--oa-primary); cursor: pointer; transition: background 150ms ease; }
+.attachment-upload input:not(:disabled)::file-selector-button:hover { background: #eff8f6; }
+.attachment-upload input:disabled { opacity: .55; }
+.attachment-upload input:focus-visible { outline: 3px solid #8ac2bc; outline-offset: 3px; }
+.attachment-list { list-style: none; padding: 0; margin: 16px 0; }
+.attachment-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--oa-border); }
+.attachment-description { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 200px; overflow-wrap: anywhere; }
+.el-pagination { margin-top: 24px; justify-content: center; }
+button:focus-visible, a:focus-visible { outline: 3px solid #8ac2bc; outline-offset: 3px; }
+@keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .workbench { animation: none; } }
+.manual-oa .page-heading h1 { font-size: 30px; letter-spacing: 0; }
+.manual-oa .oa-section { min-width: 0; margin-top: 20px; padding: 20px 0; border-top: 1px solid var(--oa-border); }
+.manual-oa .oa-section h2, .manual-oa .oa-section h3 { margin: 0 0 16px; font-size: 17px; }
+.manual-oa .oa-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)); gap: 0 16px; }
+.manual-oa .oa-two-pane { display: grid; grid-template-columns: minmax(220px,.8fr) minmax(0,2fr); gap: 20px; align-items: start; }
+.manual-oa .oa-list-item { display: flex; width: 100%; flex-direction: column; align-items: flex-start; gap: 5px; padding: 12px; border: 1px solid var(--oa-border); border-radius: 6px; background: #fff; text-align: left; cursor: pointer; }
+.manual-oa .oa-list-item + .oa-list-item { margin-top: 8px; }
+.manual-oa .oa-list-item.active { border-color: var(--oa-primary); background: #eff8f6; }
+.manual-oa .oa-list-item span, .manual-oa .node-row span, .manual-oa .muted { color: var(--oa-muted); font-size: 13px; }
+.manual-oa .node-heading, .manual-oa .node-row, .manual-oa .seat-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.manual-oa .node-heading { justify-content: space-between; border-top: 1px solid var(--oa-border); padding-top: 16px; }
+.manual-oa .node-row { padding: 12px 0; border-bottom: 1px solid #edf1f5; }
+.manual-oa .node-kind { width: 72px; font-weight: 600; }
+.manual-oa .seat-row { padding: 8px 0 8px 16px; border-top: 1px solid #edf1f5; }
+.manual-oa .oa-field, .manual-oa .oa-grid > label { display: flex; min-width: 0; flex-direction: column; gap: 8px; margin: 0 0 16px; color: var(--oa-text); font-size: 14px; }
+.manual-oa select, .manual-oa input[type=date], .manual-oa .oa-field > input { width: 100%; min-width: 0; min-height: 36px; padding: 6px 10px; border: 1px solid var(--oa-border); border-radius: 4px; background: #fff; color: var(--oa-text); font: inherit; box-sizing: border-box; }
+.manual-oa .oa-condition { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,150px),1fr)); align-items: end; gap: 10px; padding-top: 16px; }
+.manual-oa .oa-node { border-bottom: 1px solid var(--oa-border); margin-top: 16px; }
+.manual-oa .oa-node .node-heading { border-top: 0; padding: 0 0 12px; }
+.manual-oa .oa-node h3 { margin: 0; }
+.manual-oa .el-select, .manual-oa .el-input-number { max-width: 100%; }
+.manual-oa .el-dialog { max-width: calc(100vw - 32px); }
+.manual-oa h2, .manual-oa p { overflow-wrap: anywhere; }
+.manual-oa .oa-checks { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; border: 1px solid var(--oa-border); }
+@media (max-width: 800px) { .manual-oa .oa-two-pane { grid-template-columns: minmax(0,1fr); } .manual-oa .oa-section { padding: 16px 0; overflow-x: auto; } }
