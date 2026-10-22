@@ -11,7 +11,10 @@ const roles = [
 test.describe('P1 五类角色入口', () => {
   test.beforeEach(async ({ page }) => {
       await page.route(url => new URL(url).pathname.startsWith('/api/'), async route => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: '0', data: [] }) })
+      const data = new URL(route.request().url()).pathname === '/api/auth/config'
+        ? { provider: 'mock', capabilities: { ai: true } }
+        : []
+      await route.fulfill({ status: 200, json: { code: '0', data } })
     })
   })
 
@@ -20,7 +23,7 @@ test.describe('P1 五类角色入口', () => {
       await page.goto('/')
       await page.locator('.identity-switch .el-select__wrapper').click()
       await page.getByRole('option', { name: role.option, exact: true }).click()
-      await expect(page.getByText('OA 智能助手')).toBeVisible()
+      await expect(page.getByText('OA 工作平台', { exact: true })).toBeVisible()
       for (const item of role.visible) await expect(page.getByRole('menuitem', { name: item, exact: true })).toBeVisible()
       for (const item of role.hidden) await expect(page.getByRole('menuitem', { name: item, exact: true })).toHaveCount(0)
     })
