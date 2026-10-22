@@ -1,8 +1,10 @@
 # Decision-Point Audit Report
 
-**变更**: m4-resilience  
-**生成时间**: 2026-10-22T08:22:43.161Z  
-**当前状态**: executing  
+**变更**: m4-resilience
+
+**生成时间**: 2026-10-22T08:22:43.161Z
+
+**当前状态**: executing
 
 ## 汇总表
 
