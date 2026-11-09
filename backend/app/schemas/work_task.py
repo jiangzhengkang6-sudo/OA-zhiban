@@ -13,7 +13,7 @@ class WorkTaskCommandBase(BaseModel):
 
 class WorkTaskSourceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    source_type: Literal["meeting", "ticket", "approval"]
+    source_type: Literal["meeting", "ticket", "approval", "email"]
     source_id: str = Field(min_length=1, max_length=64)
     source_version: int | None = Field(default=None, ge=1)
     idempotency_key: str = Field(min_length=1, max_length=128)

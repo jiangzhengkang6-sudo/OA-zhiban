@@ -108,6 +108,10 @@ async def test_real_report_generator_bounds_output_and_preserves_usage_without_n
     assert client.structured.call_args.kwargs["max_tokens"] == 2048
     assert "private-id" not in str(client.structured.call_args)
     assert "buckets" not in str(client.structured.call_args)
+    import json
+    evidence = json.loads(client.structured.call_args.args[0][-1]['content'])
+    assert evidence == {'metrics': [{'metric_id': 'ticket_volume', 'name': 'ticket_volume',
+        'comparison_status': 'comparable', 'direction': '上升'}]}
     assert usage == client.last_usage
     client.structured.return_value = ReportDraftDTO(summary="本期2条。", metric_refs=["ticket_volume"], possible_causes=[])
     failed_usage = {}

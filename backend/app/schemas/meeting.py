@@ -118,6 +118,9 @@ class MeetingDraftDTO(BaseModel):
 class MeetingResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    schedule_id: str | None = None
+    can_create_tasks: bool = False
+
     meeting_id: str
     thread_id: str | None = None
     status: MeetingStatus

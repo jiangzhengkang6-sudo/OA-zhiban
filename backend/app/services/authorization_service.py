@@ -157,6 +157,10 @@ def business_boundary(resource, action):
         async def wrapped(session, actor, *args, **kwargs):
             actor = await require_fresh_identity(actor, session=session)
             require_permission(actor, resource, action)
+            if resource == 'work_task' and action == 'write' and actor.data_scope.get('identity_provider') == 'builtin':
+                from .identity_service import lock_tenant
+                await lock_tenant(session, actor.tenant_id)
+                actor = await require_fresh_identity(actor, session=session)
             result = await fn(session, actor, *args, **kwargs)
             await require_fresh_identity(actor, session=session)
             return result

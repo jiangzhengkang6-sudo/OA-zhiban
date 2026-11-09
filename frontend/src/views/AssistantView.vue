@@ -530,7 +530,10 @@ watch(() => route.params.threadId || route.query.threadId, recover, { immediate:
   justify-content: flex-start;
 }
 .bubble {
+  min-width: 0;
   max-width: 75%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
   padding: 10px 14px;
   border-radius: 8px;
   background: #f3f4f6;
@@ -552,5 +555,9 @@ watch(() => route.params.threadId || route.query.threadId, recover, { immediate:
   display: flex;
   gap: 12px;
   margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .bubble { max-width: 100%; }
+  .line.user .bubble { max-width: 90%; }
 }
 </style>

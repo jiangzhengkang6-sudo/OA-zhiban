@@ -7,6 +7,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { knowledgeApi } from '@/api'
+import { authState } from '@/stores/auth'
 
 const docs = ref<any[]>([])
 const loading = ref(false)
@@ -20,7 +21,7 @@ const form = reactive({
 async function load() {
   loading.value = true
   try {
-    docs.value = await knowledgeApi.list()
+    docs.value = authState.provider === 'builtin' ? await knowledgeApi.listPublished() : await knowledgeApi.list()
   } finally {
     loading.value = false
   }
@@ -56,7 +57,7 @@ onMounted(load)
 
 <template>
   <div>
-    <el-card shadow="never" style="margin-bottom: 16px">
+    <el-card v-if="authState.provider !== 'builtin'" shadow="never" style="margin-bottom: 16px">
       <template #header><span>导入知识文档</span></template>
       <el-form label-width="90px">
         <el-form-item label="标题">
@@ -75,22 +76,28 @@ onMounted(load)
     </el-card>
 
     <el-card shadow="never">
-      <template #header><span>知识文档列表</span></template>
+      <template #header><span>{{ authState.provider === 'builtin' ? '已发布知识资料' : '知识文档列表' }}</span></template>
       <el-table :data="docs" v-loading="loading" border size="small">
-        <el-table-column prop="title" label="标题" min-width="160" />
+        <el-table-column label="标题" min-width="200">
+          <template #default="{ row }">
+            <router-link v-if="authState.provider === 'builtin'" class="source-link"
+              :to="`/knowledge/sources/${row.source_id}/versions/${row.version_id}`">{{ row.title }}</router-link>
+            <span v-else>{{ row.title }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="version" label="版本" width="70" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 'published' ? 'success' : 'info'" size="small">
-              {{ row.status }}
+              {{ row.status === 'published' ? '已发布' : row.status === 'offline' ? '已下线' : '草稿' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="权限标签" min-width="140">
+        <el-table-column v-if="authState.provider !== 'builtin'" label="权限标签" min-width="140">
           <template #default="{ row }">{{ (row.permission_tags || []).join(', ') || '公开' }}</template>
         </el-table-column>
-        <el-table-column prop="owner_id" label="责任人" width="110" />
-        <el-table-column label="操作" width="100">
+        <el-table-column v-if="authState.provider !== 'builtin'" prop="owner_id" label="责任人" width="110" />
+        <el-table-column v-if="authState.provider !== 'builtin'" label="操作" width="100">
           <template #default="{ row }">
             <el-button v-if="row.status !== 'offline'" type="danger" size="small" @click="offline(row)">
               下线
@@ -101,3 +108,7 @@ onMounted(load)
     </el-card>
   </div>
 </template>
+
+<style scoped>
+.source-link { color: var(--el-color-primary); overflow-wrap: anywhere; text-underline-offset: 3px; }
+</style>

@@ -22,6 +22,9 @@ from .api.routers import (
     oa_reimbursements,
     oa_tickets,
     oa_notifications,
+    oa_announcements,
+    oa_delegations,
+    oa_work_items,
     oa_balances,
     oa_approvals,
     oa_administration,
@@ -33,8 +36,11 @@ from .api.routers import (
     interrupts,
     knowledge,
     meetings,
+    meeting_events,
+    meeting_transcriptions,
     documents,
     emails,
+    public_mail,
     work_tasks,
     reports,
     contracts,
@@ -55,12 +61,21 @@ from .graph.graph_service import runtime
 from .middleware.auth import AuthMiddleware
 from .middleware.trace import TraceMiddleware
 from .schemas.common import ApiResponse
-from .services.scheduler import run_scheduler
+from .services.scheduler import run_scheduler, run_notification_scheduler
 from . import models  # noqa: F401  # 确保所有模型注册到 Base.metadata
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("oa-agent")
 _settings = get_settings()
+
+
+async def close_scheduler(task, stop_event, timeout=5.0):
+    stop_event.set()
+    done, _ = await asyncio.wait({task}, timeout=timeout)
+    if not done:
+        logger.info('后台扫描未及时退出，取消本次扫描并回滚未提交事务')
+        task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
 
 @asynccontextmanager
@@ -85,12 +100,19 @@ async def lifespan(app: FastAPI):
     # 启动超时催办/升级调度器
     stop_event = asyncio.Event()
     scheduler_task = asyncio.create_task(run_scheduler(stop_event))
+    notification_task = asyncio.create_task(run_notification_scheduler(stop_event))
+    from .services.meeting_transcription_service import run as run_transcriptions
+    transcription_task = asyncio.create_task(run_transcriptions(stop_event))
+    from .ops.operational_errors import install
+    error_handler = install(_settings)
 
     try:
         yield
     finally:
-        stop_event.set()
-        await scheduler_task
+        logging.getLogger().removeHandler(error_handler)
+        error_handler.close()
+        await asyncio.gather(close_scheduler(scheduler_task, stop_event),close_scheduler(notification_task,stop_event),
+                             close_scheduler(transcription_task,stop_event))
         if runtime_initialized:
             await runtime.close()
         await engine.dispose()
@@ -179,6 +201,9 @@ app.include_router(oa_leaves.router, prefix=_settings.api_prefix)
 app.include_router(oa_reimbursements.router, prefix=_settings.api_prefix)
 app.include_router(oa_tickets.router, prefix=_settings.api_prefix)
 app.include_router(oa_notifications.router, prefix=_settings.api_prefix)
+app.include_router(oa_announcements.router, prefix=_settings.api_prefix)
+app.include_router(oa_delegations.router, prefix=_settings.api_prefix)
+app.include_router(oa_work_items.router, prefix=_settings.api_prefix)
 app.include_router(oa_balances.router, prefix=_settings.api_prefix)
 app.include_router(oa_approvals.router, prefix=_settings.api_prefix)
 app.include_router(oa_administration.router, prefix=_settings.api_prefix)
@@ -196,8 +221,11 @@ app.include_router(policies.router, prefix=_settings.api_prefix)
 app.include_router(policies.version_router, prefix=_settings.api_prefix)
 app.include_router(knowledge.router, prefix=_settings.api_prefix)
 app.include_router(meetings.router, prefix=_settings.api_prefix)
+app.include_router(meeting_events.router, prefix=_settings.api_prefix)
+app.include_router(meeting_transcriptions.router, prefix=_settings.api_prefix)
 app.include_router(documents.router, prefix=_settings.api_prefix)
 app.include_router(emails.router, prefix=_settings.api_prefix)
+app.include_router(public_mail.router, prefix=_settings.api_prefix)
 app.include_router(work_tasks.router, prefix=_settings.api_prefix)
 app.include_router(reports.router, prefix=_settings.api_prefix)
 app.include_router(contracts.router, prefix=_settings.api_prefix)

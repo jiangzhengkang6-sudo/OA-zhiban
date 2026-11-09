@@ -9,6 +9,10 @@ import MeetingDraftEditor from '@/components/MeetingDraftEditor.vue'
 import MeetingSourceList from '@/components/MeetingSourceList.vue'
 import { getCurrentUserId } from '@/api/client'
 import { hasRole } from '@/utils/roles'
+import { can } from '@/stores/auth'
+import { workTaskApi } from '@/api/workTask'
+import { replayable as replayTask } from '@/api/draftCommands'
+import { List } from '@element-plus/icons-vue'
 
 const route = useRoute(), router = useRouter()
 const title = ref(''), content = ref(''), meeting = ref<MeetingResponse | null>(null)
@@ -29,7 +33,11 @@ const meetingId = computed(() => String(route.params.meetingId || ''))
 const canAudit = computed(() => hasRole(getCurrentUserId(), 'admin'))
 let loadSerial = 0
 const statusName: Record<string, string> = { CREATED: '待生成', PROCESSING: '生成中', DRAFT_READY: '待审阅', REVIEWING: '已编辑 · 待审阅', PAUSED: '生成已暂停', CONFIRMED: '已确认', REJECTED: '已拒绝' }
-function apply(result: MeetingResponse) { meeting.value = result; draft.value = result.draft ? structuredClone(result.draft) : null }
+function apply(result: MeetingResponse) {
+  const schedule=meeting.value?.meeting_id===result.meeting_id?meeting.value.schedule_id:null
+  meeting.value = { ...result, schedule_id:result.schedule_id||schedule }
+  draft.value = result.draft ? structuredClone(result.draft) : null
+}
 function problem(err: unknown) {
   const message = (axios.isAxiosError(err) && err.response?.data?.message) || (err instanceof Error ? err.message : '操作未完成，请刷新后重试')
   error.value = /降级|关闭/.test(message) ? `降级阻断：${message}。当前草稿未改变，恢复后可重试。` : message
@@ -96,12 +104,23 @@ async function decide(action: 'confirm' | 'reject' | 'regenerate') {
   const payload = { action, reason, expected_version }
   await perform(id, () => replayable(`meeting-${action}`, { id, ...payload }, idempotency_key => meetingApi.decide(id, { ...payload, idempotency_key })))
   if (!error.value) ElMessage.success(action === 'confirm' ? '已确认' : action === 'reject' ? '已拒绝' : '已重新生成')
+  if (!error.value && action==='confirm') await load()
+}
+async function createTasks(){
+  if(!meeting.value?.can_create_tasks||busy.value||!can('work_task','write'))return
+  const target=meeting.value.meeting_id,version=meeting.value.version
+  busy.value=true;error.value=''
+  try{
+    const payload={source_type:'meeting' as const,source_id:target,source_version:version||undefined}
+    const result=await replayTask('meeting-task:'+target+':'+version,payload,key=>workTaskApi.create({...payload,idempotency_key:key}))
+    if(meetingId.value===target)await router.push('/work-tasks/'+result.batch_id)
+  }catch(e){problem(e)}finally{busy.value=false}
 }
 </script>
 
 <template>
   <main class="meeting-page">
-    <header class="heading"><div><p class="eyebrow">会议文本 · 工作台</p><h1>{{ meeting?.title || '整理一场会议' }}</h1><p class="subhead">{{ meeting ? `${meeting.meeting_id} · ${statusName[meeting.status]}${meeting.version ? ` · 草稿 v${meeting.version}` : ''}` : '粘贴会议文字，生成可以逐条核对来源的纪要草稿。' }}</p></div><el-button v-if="meeting" @click="router.push('/meetings')">返回会议列表</el-button></header>
+    <header class="heading"><div><p class="eyebrow">会议文本 · 工作台</p><h1>{{ meeting?.title || '整理一场会议' }}</h1><p class="subhead">{{ meeting ? `${meeting.meeting_id} · ${statusName[meeting.status]}${meeting.version ? ` · 草稿 v${meeting.version}` : ''}` : '粘贴会议文字，生成可以逐条核对来源的纪要草稿。' }}</p></div><el-button @click="router.push(meeting?.schedule_id?'/meeting-events/'+meeting.schedule_id:'/meetings')">{{meeting?.schedule_id?'返回会议安排':'返回会议列表'}}</el-button></header>
     <el-alert v-if="error" :title="error" type="warning" show-icon :closable="false" class="error" />
     <el-skeleton v-if="loading" :rows="8" animated />
     <template v-else-if="meetingId && !meeting">
@@ -112,7 +131,8 @@ async function decide(action: 'confirm' | 'reject' | 'regenerate') {
         <section class="recent"><h2>最近会议</h2><el-empty v-if="!items.length" description="尚无会议任务" /><button v-for="item in items" :key="item.meeting_id" class="meeting-row" @click="router.push(`/meetings/${item.meeting_id}`)"><span><strong>{{ item.title }}</strong><small>{{ item.meeting_id }}</small></span><span>{{ statusName[item.status] }} →</span></button></section></div>
     </template>
     <template v-else>
-      <div class="notice"><span class="notice-dot" /> 人工确认只保存会议记录，不会写入 OA、任务、日历或邮件。</div>
+      <el-button v-if="meeting.can_create_tasks&&can('work_task','write')" :icon="List" :loading="busy" @click="createTasks">提取业务任务</el-button>
+      <div class="notice"><span class="notice-dot" /> {{ meeting.schedule_id ? '确认后发布纪要并通知参会人员；业务任务须另行核对并确认创建。' : '人工确认只保存会议记录，不会写入 OA、任务、日历或邮件。' }}</div>
       <div class="toolbar"><div><el-button v-if="meeting.available_actions.includes('generate')" type="primary" :loading="busy" @click="generate">生成草稿</el-button><el-button v-if="meeting.available_actions.includes('retry')" type="primary" data-testid="retry-meeting" :loading="busy" @click="retry">从恢复点重试</el-button><el-button v-if="editable" data-testid="save-meeting" :disabled="!validDraft || !dirty || busy" @click="save">保存新版本</el-button><el-button v-if="meeting.available_actions.includes('confirm')" type="primary" data-testid="confirm-meeting" :disabled="busy || dirty" @click="decide('confirm')">确认草稿</el-button><el-button v-if="meeting.available_actions.includes('reject')" :disabled="busy || dirty" @click="decide('reject')">拒绝</el-button><el-button v-if="meeting.available_actions.includes('regenerate')" :disabled="busy || dirty" @click="decide('regenerate')">重新生成</el-button></div><el-button v-if="canAudit" text @click="router.push({ path: '/audit', query: { business_id: meeting.meeting_id } })">查看审计轨迹</el-button></div>
       <p v-if="dirty" class="pause-note">有未保存的草稿修改。先保存新版本，再确认、拒绝或重新生成。</p>
       <p v-if="meeting.status === 'PAUSED'" class="pause-note">生成依赖失败，任务已安全暂停。每次点击重试会发起一次新尝试；若场景被运维降级阻断，当前草稿保持原状。</p>

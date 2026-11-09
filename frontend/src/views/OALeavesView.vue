@@ -11,15 +11,20 @@ const route=useRoute(),router=useRouter(),{busy,error,run}=useOACommands()
 const rows=ref<Leave[]>([]),workflows=ref<Workflow[]>([]),detail=ref<Leave|null>(null),loading=ref(false),workflow=ref(''),file=ref<File|null>(null)
 const fields=ref<LeaveFields>({leave_type:'',start_date:'',end_date:'',reason:'',attachment_ids:[]})
 const saved=ref('');let loadRevision=0
+const loadFailed=ref(false)
 const creating=computed(()=>route.params.id==='new'&&!detail.value),dirty=computed(()=>JSON.stringify(fields.value)!==saved.value)
 const writable=computed(()=>canOA('leave','write'))
+const canConfigureWorkflow=computed(()=>canOA('workflow')&&canOA('workflow','write'))
+const missingWorkflow=computed(()=>creating.value&&!loading.value&&!loadFailed.value&&!workflows.value.length)
+const workflowPlaceholder=computed(()=>loading.value?'正在加载请假流程…':loadFailed.value?'加载失败，请刷新重试':'暂无可用请假流程')
+const typePlaceholder=computed(()=>loading.value?'正在加载假种…':loadFailed.value?'加载失败，请刷新重试':'暂无可用假种')
 const editable=computed(()=>writable.value&&(creating.value||!!detail.value?.allowed_actions.includes('edit')))
 const types=computed(()=>workflows.value.find(w=>w.id===(detail.value?.workflow_definition_id||workflow.value))?.form?.leave_types||[fields.value.leave_type].filter(Boolean))
 const days=computed(()=>{const value=(Date.parse(fields.value.end_date)-Date.parse(fields.value.start_date))/86400000+1;return Number.isFinite(value)&&value>0?value:0})
-const valid=computed(()=>!!fields.value.leave_type&&days.value>0&&!!fields.value.reason.trim()&&fields.value.reason.length<=2000)
+const valid=computed(()=>!loading.value&&!loadFailed.value&&!!fields.value.leave_type&&days.value>0&&!!fields.value.reason.trim()&&fields.value.reason.length<=2000)
 async function load(){
-  const request=++loadRevision;detail.value=null;error.value='';loading.value=true;saved.value=''
-  if(!canOA('leave')){error.value='当前账号没有申请读取权限';loading.value=false;return}
+  const request=++loadRevision;detail.value=null;error.value='';loading.value=true;loadFailed.value=false;saved.value='';workflows.value=[];workflow.value=''
+  if(!canOA('leave')){error.value='当前账号没有申请读取权限';loadFailed.value=true;loading.value=false;return}
   try{
     const [list,available]=await Promise.all([oaApi.leaves(),oaApi.workflows(true)])
     if(request!==loadRevision)return
@@ -33,7 +38,7 @@ async function load(){
       detail.value=value;fields.value=structuredClone(value.fields)
     }
     saved.value=JSON.stringify(fields.value)
-  }catch(e){if(request===loadRevision)error.value=messageOf(e)}finally{if(request===loadRevision)loading.value=false}
+  }catch(e){if(request===loadRevision){error.value=messageOf(e);loadFailed.value=true}}finally{if(request===loadRevision)loading.value=false}
 }
 async function save(){
   if(!editable.value||!valid.value)return
@@ -82,11 +87,15 @@ onBeforeUnmount(()=>{loadRevision++})
     <el-table :data="rows" empty-text="暂无申请"><el-table-column prop="business_no" label="申请编号" min-width="190"/><el-table-column label="假种" min-width="90"><template #default="{row}">{{oaLabel(row.fields.leave_type)}}</template></el-table-column><el-table-column label="日期" min-width="200"><template #default="{row}">{{row.fields.start_date}} 至 {{row.fields.end_date}}</template></el-table-column><el-table-column label="状态" min-width="130"><template #default="{row}">{{row.archived_at?'已归档 · ':''}}{{oaLabel(row.state)}}</template></el-table-column><el-table-column label="操作" width="80" fixed="right"><template #default="{row}"><el-button link type="primary" @click="router.push('/oa/leaves/'+row.id)">详情</el-button></template></el-table-column></el-table>
     <section v-if="creating||detail" class="oa-section">
       <h2>{{creating?'新建请假':detail?.business_no}}</h2>
+      <el-alert v-if="missingWorkflow" title="本部门暂无已发布的请假流程" type="warning" :closable="false" show-icon>
+        <p>{{canConfigureWorkflow?'请假流程发布后，才可选择流程及假种。':'请联系本部门流程管理员配置并发布请假流程。'}}</p>
+        <el-button v-if="canConfigureWorkflow" data-testid="configure-leave-workflow" link type="primary" @click="router.push('/oa/workflows')">配置流程</el-button>
+      </el-alert>
       <el-alert v-if="detail?.pause_reason" :title="detail.pause_reason" type="warning" :closable="false"/>
       <el-form label-position="top" @submit.prevent="save">
         <div class="oa-grid">
-          <label v-if="creating">请假流程<select v-model="workflow" aria-label="请假流程" @change="fields.leave_type=types[0]||''"><option v-for="w in workflows" :key="w.id" :value="w.id">{{w.name}}</option></select></label>
-          <label>假种<select v-model="fields.leave_type" aria-label="假种" :disabled="!editable"><option v-for="t in types" :key="t" :value="t">{{oaLabel(t)}}</option></select></label>
+          <label v-if="creating">请假流程<select v-model="workflow" aria-label="请假流程" :disabled="!editable||loading||loadFailed||!workflows.length" @change="fields.leave_type=types[0]||''"><option v-if="loading||loadFailed||!workflows.length" value="" disabled>{{workflowPlaceholder}}</option><option v-for="w in workflows" :key="w.id" :value="w.id">{{w.name}}</option></select></label>
+          <label>假种<select v-model="fields.leave_type" aria-label="假种" :disabled="!editable||loading||loadFailed||!types.length"><option v-if="loading||loadFailed||!types.length" :value="fields.leave_type" disabled>{{typePlaceholder}}</option><option v-for="t in types" :key="t" :value="t">{{oaLabel(t)}}</option></select></label>
           <label>开始日期<input v-model="fields.start_date" type="date" aria-label="开始日期" :disabled="!editable"/></label>
           <label>结束日期<input v-model="fields.end_date" type="date" aria-label="结束日期" :min="fields.start_date" :disabled="!editable"/></label>
           <div class="oa-stat"><span>日历天数</span><strong>{{days}} 天</strong></div>

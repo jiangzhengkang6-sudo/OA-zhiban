@@ -11,19 +11,19 @@ const labels: Record<string, string> = {
   low: '低', normal: '普通', medium: '普通', high: '高', urgent: '紧急',
   user: '用户', assistant: '智能助手', system: '系统', tool: '工具',
   explicit: '原文明确提及', inferred: '根据原文推断', needs_confirmation: '待人工核实',
-  ticket: '工单服务', faq: '知识问答', leave: '请假审批', meeting: '会议', approval: '审批',
+  ticket: '工单服务', faq: '知识问答', leave: '请假审批', meeting: '会议', approval: '审批', email: '公共邮件',
   APPROVED: '已通过', REJECTED: '已拒绝', CANCELLED: '已取消', COMPLETED: '已完成',
   PAUSED: '已暂停', WAITING_HUMAN: '待人工处理', CREATED: '已创建',
   created: '创建任务', updated: '修改任务', start: '开始任务', progress: '更新进度',
-  complete: '完成任务', cancel: '取消任务', archive: '归档任务',
+  complete: '完成任务', cancel: '取消任务', archive: '归档任务', handoff: '交接任务',
 }
 export function businessLabel(value: string): string { return labels[value] || value }
 
 export function sourceDescription(ref: string): string {
   const [type, id, version] = ref.split(':')
-  if (!['meeting', 'ticket', 'approval'].includes(type) || !id) return '关联业务来源'
-  const title = { meeting: '会议', ticket: '工单', approval: '审批' }[type]
-  return `${title} ${id}${type !== 'ticket' && version ? ` · 第 ${version} 版` : ''}`
+  if (!['meeting', 'ticket', 'approval', 'email'].includes(type) || !id) return '关联业务来源'
+  const title = { meeting: '会议', ticket: '工单', approval: '审批', email: '公共邮件' }[type]
+  return `${title} ${id}${!['ticket', 'email'].includes(type) && version ? ` · 第 ${version} 版` : ''}`
 }
 
 export function readableSource(content: string): unknown {

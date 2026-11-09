@@ -4,6 +4,14 @@ import { authState, safeRedirect, refreshSession, clearSession, configureAuth, l
 beforeEach(() => { clearSession(); authState.initialized=false; authState.provider='mock'; authState.aiEnabled=true; authState.manualOA=false; vi.restoreAllMocks() })
 
 describe('正式会话', () => {
+  it('认证接口返回空响应时显示服务异常提示', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, {status:500})))
+    try {
+      await expect(configureAuth()).rejects.toThrow('登录服务暂时不可用')
+      expect(authState.initialized).toBe(false)
+      expect(authState.user).toBeNull()
+    } finally { vi.unstubAllGlobals() }
+  })
   it('AI 关闭保留显式授权的 M3 人工业务，仍拒绝 AI 入口和未授权操作', () => {
     authState.provider = 'builtin'
     authState.aiEnabled = false

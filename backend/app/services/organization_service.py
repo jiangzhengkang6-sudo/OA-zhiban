@@ -10,7 +10,7 @@ from .credential_service import hash_password
 from .authorization_service import require_fresh_identity, require_permission
 
 BUSINESS_RESOURCES = ('meeting', 'document', 'email', 'work_task', 'report', 'contract', 'thread', 'task')
-RESOURCES = (*BUSINESS_RESOURCES, 'organization', 'leave', 'approval', 'workflow', 'leave_balance', 'workflow_admin','reimbursement','ticket','ticket_handle','ticket_admin','notification','notification_admin')
+RESOURCES = (*BUSINESS_RESOURCES, 'knowledge', 'organization', 'leave', 'approval', 'workflow', 'leave_balance', 'workflow_admin','reimbursement','ticket','ticket_handle','ticket_admin','notification','notification_admin','announcement')
 
 
 def invalid(message):
@@ -97,7 +97,7 @@ async def _user_view(session, row):
     roles = list((await session.scalars(select(OAUserRole.role_id).where(
         OAUserRole.tenant_id == row.tenant_id, OAUserRole.user_id == row.id))).all())
     return dict(id=row.id, username=row.normalized_username, display_name=row.display_name,
-        status=row.status, handoff_pending=row.handoff_pending, role_ids=roles,
+        status=row.status, handoff_pending=row.handoff_pending, version=row.authorization_version, role_ids=roles,
         department_id=membership.department_id if membership else None,
         position_id=membership.position_id if membership else None,
         manager_id=membership.manager_id if membership else None)
@@ -214,18 +214,79 @@ async def create_user(session, actor, payload):
     return result
 
 
-async def update_user(session, actor, user_id, payload):
-    actor = await _manage(session, actor)
-    user = await _target(session, OAUser, user_id, actor.tenant_id)
+async def _update_user(session, actor, user, payload):
+    from .oa_access_service import revision_conflict
+    if payload.expected_version is not None and user.authorization_version != payload.expected_version:
+        raise revision_conflict()
+    membership = await session.get(OAMembership, (actor.tenant_id, user.id))
+    moved = (membership.department_id if membership else None) != payload.department_id or (membership.position_id if membership else None) != payload.position_id
     changed_status = user.status != payload.status
     user.display_name, user.status = payload.display_name.strip(), payload.status
-    if user.status == 'disabled':
+    if (changed_status and user.status == 'disabled') or moved:
         user.handoff_pending = True
     await _assign(session, actor, user, payload)
     await _bump(session, user, revoke=changed_status)
     await session.flush()
-    result = await _user_view(session, user)
+    return await _user_view(session, user)
+
+
+async def update_user(session, actor, user_id, payload):
+    actor = await _manage(session, actor)
+    user = await _target(session, OAUser, user_id, actor.tenant_id)
+    before = await _user_view(session, user)
+    result = await _update_user(session, actor, user, payload)
+    lifecycle_event(session, actor, user.id, 'organization.member_change', before=before, after=result)
     await _finish(session, actor, 'organization.user_update', user.id)
+    return result
+
+
+def lifecycle_event(session, actor, user_id, action, **details):
+    from ..models.audit_event import AuditEvent
+    session.add(AuditEvent(actor_id=actor.user_id, action=action, target_type='identity',
+        target_id=user_id, output_summary=details, result='success'))
+
+
+async def member_command(session, actor, target_id, action, payload):
+    from uuid import uuid4
+    from ..schemas.command import CommandEnvelope
+    from . import idempotency_service
+    return await idempotency_service.claim(session, CommandEnvelope(command_id=uuid4(),
+        idempotency_key=payload.operation_id, actor_id=actor.user_id, tenant_id=actor.tenant_id,
+        resource_type='organization', resource_id=target_id, trace_id=uuid4().hex,
+        payload={'action': action, **payload.model_dump(mode='json')}))
+
+
+async def batch_update_users(session, actor, payload):
+    from ..schemas.organization import UserUpdate
+    from . import idempotency_service
+    from .oa_access_service import revision_conflict
+    actor = await _manage(session, actor)
+    async with session.begin_nested():
+        command, fresh = await member_command(session, actor, actor.tenant_id, 'batch_update', payload)
+        if not fresh:
+            result = command.result['members']
+        else:
+            users = []
+            for entry in payload.members:
+                user = await _target(session, OAUser, entry.user_id, actor.tenant_id)
+                if user.authorization_version != entry.expected_version:
+                    raise revision_conflict()
+                users.append(user)
+            result = []
+            changes = payload.changes.model_dump(exclude_unset=True)
+            for user in users:
+                before = await _user_view(session, user)
+                update_payload = UserUpdate(**{**{k: before[k] for k in ('display_name','status','department_id','position_id','manager_id','role_ids')}, **changes})
+                after = await _update_user(session, actor, user, update_payload)
+                lifecycle_event(session, actor, user.id, 'organization.member_change', reason=payload.reason.strip(), before=before, after=after)
+                result.append(after)
+            await idempotency_service.complete(session, command, {'members': result})
+            if any(u.id == actor.user_id for u in users):
+                session.info.get('identity_actors', {}).pop(actor.user_id, None)
+    if fresh:
+        await _finish(session, actor, 'organization.batch_update', actor.tenant_id)
+    else:
+        await session.commit()
     return result
 
 

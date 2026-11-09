@@ -98,6 +98,22 @@ def _actions(status: str) -> list[str]:
 
 async def _owned(session: AsyncSession, actor: CurrentUser, meeting_id: str, *, lock: bool = False) -> MeetingRecord:
     actor = await _identity(session, actor)
+    from ..models.oa_meeting import OAMeeting
+    schedule = await session.scalar(select(OAMeeting).where(OAMeeting.tenant_id==actor.tenant_id,
+        OAMeeting.minutes_id==meeting_id))
+    if schedule is not None:
+        from .meeting_management_service import access, editor
+        await access(session,actor,schedule.id)
+        query=select(MeetingRecord).where(MeetingRecord.tenant_id==actor.tenant_id,MeetingRecord.meeting_id==meeting_id)
+        if lock:
+            require_permission(actor,'meeting','write')
+            if not editor(actor,schedule) or schedule.state!='ENDED':
+                raise AppException(ErrorCode.FORBIDDEN,'仅会议发起人、主持人和记录人可编辑纪要',http_status=403)
+            query=query.with_for_update().execution_options(populate_existing=True)
+        record=await session.scalar(query)
+        if record is None or not lock and not editor(actor,schedule) and record.status!='CONFIRMED':
+            raise AppException(ErrorCode.NOT_FOUND,'纪要尚未发布或不可访问',http_status=404)
+        return record
     query = select(MeetingRecord).where(
         MeetingRecord.meeting_id == meeting_id,
         MeetingRecord.tenant_id == actor.tenant_id,
@@ -354,15 +370,30 @@ async def create_meeting(session: AsyncSession, actor: CurrentUser, payload: Mee
 
 @business_boundary('meeting', 'read')
 async def get_meeting(session: AsyncSession, actor: CurrentUser, meeting_id: str) -> MeetingResponse:
-    return await _response(session, await _owned(session, actor, meeting_id))
+    record=await _owned(session, actor, meeting_id)
+    response=await _response(session, record)
+    fresh=await _identity(session,actor)
+    response.can_create_tasks=record.status=='CONFIRMED' and record.owner_id==fresh.user_id
+    from ..models.oa_meeting import OAMeeting
+    schedule=await session.scalar(select(OAMeeting).where(OAMeeting.tenant_id==actor.tenant_id,OAMeeting.minutes_id==meeting_id))
+    if schedule:
+        from .meeting_management_service import editor
+        response.schedule_id=schedule.id
+        response.can_create_tasks=record.status=='CONFIRMED' and editor(fresh,schedule)
+        if not editor(fresh,schedule) or not any(p['resource']=='meeting' and p['action']=='write'
+                for p in fresh.data_scope.get('permissions',[])): response.available_actions=[]
+    return response
 
 
 @business_boundary('meeting', 'read')
 async def list_meetings(session: AsyncSession, actor: CurrentUser, *, page=1, page_size=20) -> MeetingPage:
     actor = await _identity(session, actor)
     page, page_size = max(page, 1), min(max(page_size, 1), 100)
+    from ..models.oa_meeting import OAMeeting
     query = select(MeetingRecord).where(MeetingRecord.tenant_id == actor.tenant_id,
                                        resource_clause(actor, 'meeting', MeetingRecord.owner_id))
+    query=query.where(~select(OAMeeting.id).where(OAMeeting.tenant_id==actor.tenant_id,
+        OAMeeting.minutes_id==MeetingRecord.meeting_id).exists())
     total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
     records = (await session.scalars(query.order_by(MeetingRecord.updated_at.desc(), MeetingRecord.id)
                                     .offset((page - 1) * page_size).limit(page_size))).all()
@@ -448,6 +479,9 @@ async def save_draft(session: AsyncSession, actor: CurrentUser, meeting_id: str,
 async def decide(session: AsyncSession, actor: CurrentUser, meeting_id: str, action: str,
                  reason: str | None, idempotency_key: str, expected_version=None) -> MeetingResponse:
     actor = await _identity(session, actor)
+    if actor.data_scope.get('identity_provider')=='builtin':
+        from .identity_service import lock_tenant
+        await lock_tenant(session,actor.tenant_id)
     record = await _owned(session, actor, meeting_id, lock=True)
     payload = {"reason": reason, "expected_version": expected_version}
     command, fresh = await _claim(session, actor, meeting_id, action, payload, idempotency_key)
@@ -484,4 +518,7 @@ async def decide(session: AsyncSession, actor: CurrentUser, meeting_id: str, act
     response = await _finish(session, record, command)
     decision.result = response.model_dump(mode="json")
     await session.flush()
+    if action=='confirm' and record.status=='CONFIRMED':
+        from .meeting_management_service import notify_minutes_confirmed
+        await notify_minutes_confirmed(session,actor,meeting_id,meeting_id+':'+idempotency_key)
     return response

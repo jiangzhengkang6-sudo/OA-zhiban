@@ -34,3 +34,7 @@ output/formal-oa-private/
 /.trae/
 /.workbuddy/
 /.worktrees/
+
+# 本地规格工作流状态（保留在本机，不属于项目源码）
+.spec-superflow.yaml
+.superpowers/

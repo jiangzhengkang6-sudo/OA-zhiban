@@ -14,6 +14,7 @@ from tests.api.test_oa_notification import setup, enqueue
 
 def route(monkeypatch,handler):
     settings=Settings(_env_file=None,wecom_enabled=True,wecom_tenant_id=handler.tenant_id,
+        wecom_policy_activated_at=datetime(2000,1,1,tzinfo=timezone.utc),wecom_group_interval_seconds=0,
         wecom_department_id=handler.depts[0],wecom_webhook_url=SecretStr('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=fake-key-'+handler.tenant_id))
     monkeypatch.setattr(service,'get_settings',lambda:settings)
     monkeypatch.setattr(worker,'get_settings',lambda:settings)

@@ -5,6 +5,7 @@ from uuid import uuid5,NAMESPACE_URL
 
 from sqlalchemy import select
 from ..core.errors import AppException
+from ..core.leave_types import leave_type_code
 from ..models.identity import OAUser,OAMembership
 from ..models.oa_leave import OALeaveBalance,OALeaveLedger
 from ..models.oa_workflow import (OAWorkflowInstance,OAWorkflowNode,OAWorkflowSeat,OAWorkflowOperation,OAWorkflowEvent)
@@ -66,7 +67,8 @@ async def reconciliation_issues(db,leave,*,ignore_operation_id=None):
             OALeaveLedger.leave_version_id==version.id))).all()
         form=NormalizedLeaveFields.model_validate(version.fields)
         for year,days in form.days_by_year.items():
-            balance=next((b for b in balances if b.leave_type==form.leave_type and b.year==year),None)
+            matching=[b for b in balances if leave_type_code(b.leave_type)==leave_type_code(form.leave_type) and b.year==year]
+            balance=matching[0] if len(matching)==1 else None
             movements=[item for item in ledger if balance and item.balance_id==balance.id]
             reserve=[item for item in movements if item.kind=='RESERVE']
             consume=[item for item in movements if item.kind=='CONSUME']

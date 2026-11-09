@@ -19,6 +19,7 @@ class WorkTask(Base, UUIDMixin, TimestampMixin):
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     creator_id: Mapped[str] = mapped_column(String(64), nullable=False)
     assignee_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    handoff_department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_type: Mapped[str] = mapped_column(String(16), nullable=False)
     source_id: Mapped[str] = mapped_column(String(64), nullable=False)
     source_version: Mapped[str] = mapped_column(String(64), nullable=False)

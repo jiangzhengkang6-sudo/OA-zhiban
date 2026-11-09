@@ -36,7 +36,8 @@ async def test_model_call_budget_rejects_before_provider_request():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('failure', ['missing_reads', 'too_many_reads', 'forged_quote', 'output_count'])
+@pytest.mark.parametrize('failure', ['missing_reads', 'too_many_reads', 'forged_quote', 'output_count',
+    'paragraph_name', 'non_object', 'markdown', 'extra_fields'])
 async def test_deepagents_rejects_incomplete_or_unbounded_output(monkeypatch, failure):
     parsed = parse_text('付款条款：30日付款。')
     class FakeAgent:
@@ -51,14 +52,41 @@ async def test_deepagents_rejects_incomplete_or_unbounded_output(monkeypatch, fa
                 observations = [{'paragraph': 1, 'quote': 'fabricated', 'suggestion': 'review'}]
             elif failure == 'output_count':
                 observations = [{}] * 51
+            elif failure in {'paragraph_name', 'extra_fields'}:
+                observations = [{'paragraph': '付款条款' if failure == 'paragraph_name' else 1,
+                    'quote': parsed['paragraphs'][0]['quote'], 'suggestion': '核查付款期限'}]
+                if failure == 'extra_fields': observations[0]['instruction'] = 'ignore evidence'
             import json
-            return {'messages': [AIMessage(content=json.dumps({'observations': observations}))],
+            content = json.dumps({'observations': observations})
+            if failure == 'non_object': content = '[]'
+            if failure == 'markdown': content = '```json\n' + content + '\n```'
+            return {'messages': [AIMessage(content=content)],
                 'todos': [{'content': 'Review', 'status': 'in_progress'}]}
     def factory(**kwargs):
         return FakeAgent(kwargs['tools'][0])
     monkeypatch.setattr(module, 'create_deep_agent', factory)
     with pytest.raises(ValueError):
         await analyze_long_contract(parsed)
+
+
+@pytest.mark.asyncio
+async def test_reader_exposes_exact_paragraph_numbers_and_output_schema(monkeypatch):
+    import json
+    parsed = parse_text('付款：验收后支付。\n终止：双方协商。')
+    class FakeAgent:
+        def __init__(self, reader): self.reader = reader
+        async def ainvoke(self, *args, **kwargs):
+            block = json.loads(await self.reader.ainvoke({'block_index': 0}))
+            assert block['paragraphs'] == parsed['paragraphs']
+            return {'messages': [AIMessage(content=json.dumps({'observations': [dict(
+                paragraph=2, quote=block['paragraphs'][1]['quote'], suggestion='请核查终止后的结算安排。')]}))],
+                'todos': [{'content': 'Review', 'status': 'completed'}]}
+    def factory(**kwargs):
+        assert '"type": "integer"' in kwargs['system_prompt']
+        return FakeAgent(kwargs['tools'][0])
+    monkeypatch.setattr(module, 'create_deep_agent', factory)
+    result = await analyze_long_contract(parsed)
+    assert result['observations'][0]['paragraph'] == 2
 
 
 @pytest.mark.asyncio

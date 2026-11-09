@@ -46,6 +46,7 @@ def test_disabled_full_manual_loop_preserves_checkpoints(oa_db):
         forbidden = AssertionError('人工 OA 调用了 AI、旧 OA 适配器或外部网络')
 
         async def run():
+            main.run_scheduler = AsyncMock()
             main.runtime.initialize = AsyncMock(side_effect=forbidden)
             main.runtime.close = AsyncMock(side_effect=forbidden)
             with patch.object(LLMFactory, 'get_llm', side_effect=forbidden), \

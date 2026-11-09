@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import { oaApi } from '@/api/oa'
 import { authState, can } from '@/stores/auth'
 import { messageOf, useOACommands } from '@/utils/oa'
 import type { NotificationDelivery, NotificationItem } from '@/types/oa'
 
 const { busy, error, run } = useOACommands()
+const router=useRouter()
 const items = ref<NotificationItem[]>([]), deliveries = ref<NotificationDelivery[]>([])
 const loading = ref(false), tab = ref<'inbox'|'delivery'|'contact'>('inbox'), note = ref('')
 const contact = reactive({ email:'', enabled:false, wecom_enabled:false, wecom_available:false })
@@ -18,6 +20,14 @@ const codes: Record<string,string> = {
   preflight_unavailable:'发送前授权核对未通过', destination_or_consent_unavailable:'群路由或本人授权已失效',
   wecom_rate_limited:'群机器人发送限流，稍后重试', lease_expired_possible_acceptance:'发送超时，需核对是否已接收',
   manual_retry_possible_duplicate:'人工核对后重试，可能重复',
+  wecom_policy_blocked:'不在群通知白名单内，仅保留站内信',
+  wecom_history_isolated:'历史消息已隔离，不补发到群',
+  wecom_event_merged:'同一事件已合并到群通知',
+  wecom_nudge_cooldown:'同一事项催办不足两小时，已拦截',
+  wecom_group_interval:'群通知间隔保护，等待合并发送',
+  wecom_batch_processing:'已合并，正在发送群通知',
+  wecom_probe_cleanup:'测试已结束，取消提醒不再外发',
+  notification_probe_cleanup:'测试已结束，提醒不再外发',
 }
 function stateText(state?:string|null) { return state ? states[state] || '待核对' : '未启用' }
 function codeText(code:string|null) {
@@ -64,7 +74,7 @@ onMounted(load)
       <el-empty v-if="!items.length" description="暂无站内信"/>
       <article v-for="item in items" :key="item.id" class="notice-row" :class="{unread:!item.read_at}">
         <div><strong>{{item.title}}</strong><p class="muted">{{new Date(item.created_at).toLocaleString('zh-CN')}}</p><p class="muted">站内信：{{item.inbox_state==='ACCEPTED'?'已送达':'未送达'}} · 邮件：{{stateText(item.smtp_state)}} · 企业微信：{{stateText(item.wecom_state)}}</p></div>
-        <el-button v-if="!item.read_at" @click="read(item)">标记已读</el-button><el-tag v-else type="info">已读</el-tag>
+        <el-button v-if="item.source_kind==='meeting'&&item.object_id" link type="primary" @click="router.push('/meeting-events/'+item.object_id)">查看会议</el-button><el-button v-if="!item.read_at" @click="read(item)">标记已读</el-button><el-tag v-else type="info">已读</el-tag>
       </article>
     </section>
     <section v-else-if="tab==='delivery'" class="oa-section">

@@ -4,7 +4,7 @@ from datetime import datetime,timedelta,timezone
 from uuid import uuid4
 from sqlalchemy import select,or_,func,text
 from ..core.config import get_settings
-from ..models.oa_notification import OANotification,OANotificationDelivery,OANotificationAttempt,OAUserContact
+from ..models.oa_notification import OANotification,OANotificationDelivery,OANotificationAttempt,OAUserContact,OAWecomBatch
 from .identity_service import lock_tenant
 from . import oa_notification_source as sources
 from .oa_access_service import user_department
@@ -39,7 +39,11 @@ async def reserve_wecom(db,row,now):
     count=await db.scalar(select(func.count()).select_from(OANotificationAttempt)
         .join(OANotificationDelivery,OANotificationAttempt.delivery_id==OANotificationDelivery.id)
         .where(OANotificationDelivery.channel=='wecom',OANotificationDelivery.destination_hash==row.destination_hash,
+            OANotificationAttempt.wecom_batch_id.is_(None),
             or_(OANotificationAttempt.finished_at.is_(None),OANotificationAttempt.finished_at>=now-timedelta(seconds=60))))
+    count+=await db.scalar(select(func.count()).select_from(OAWecomBatch).where(
+        OAWecomBatch.destination_hash==row.destination_hash,OAWecomBatch.state!='CANCELLED',
+        or_(OAWecomBatch.finished_at.is_(None),OAWecomBatch.finished_at>=now-timedelta(seconds=60))))
     if count>=20:
         row.last_code='wecom_rate_limited'
         row.next_attempt_at=now+timedelta(seconds=60)
@@ -47,9 +51,14 @@ async def reserve_wecom(db,row,now):
     return True
 
 
-async def expire(db,tenant,now):
-    rows=(await db.scalars(select(OANotificationDelivery).where(OANotificationDelivery.tenant_id==tenant,
-        OANotificationDelivery.state=='PROCESSING',OANotificationDelivery.lease_until<=now).with_for_update(skip_locked=True))).all()
+async def expire(db,tenant,now,*,delivery_id=None,channel='smtp'):
+    if channel=='wecom':
+        from .oa_wecom_worker import expire as expire_wecom
+        return await expire_wecom(db,tenant,now,delivery_id)
+    query=select(OANotificationDelivery).where(OANotificationDelivery.tenant_id==tenant,
+        OANotificationDelivery.channel!='wecom',OANotificationDelivery.state=='PROCESSING',OANotificationDelivery.lease_until<=now)
+    if delivery_id is not None: query=query.where(OANotificationDelivery.id==delivery_id)
+    rows=(await db.scalars(query.with_for_update(skip_locked=True))).all()
     for row in rows:
         row.state,row.last_code='UNKNOWN','lease_expired_possible_acceptance'
         attempt=await db.scalar(select(OANotificationAttempt).where(OANotificationAttempt.tenant_id==tenant,
@@ -57,20 +66,27 @@ async def expire(db,tenant,now):
         if attempt: attempt.state,attempt.finished_at='UNKNOWN',now
 
 
-async def claim_one(factory,*,tenant_id=None,now=None,channel='smtp'):
+async def claim_one(factory,*,tenant_id=None,now=None,channel='smtp',delivery_id=None):
     if channel not in {'smtp','wecom'}: raise ValueError('Unsupported notification channel')
+    if channel=='wecom':
+        import sys
+        from .oa_wecom_worker import claim_one as claim_wecom
+        return await claim_wecom(factory,sys.modules[__name__],tenant_id=tenant_id,now=now,delivery_id=delivery_id)
     now=now or datetime.now(timezone.utc)
     async with factory() as db:
         query=select(OANotificationDelivery.tenant_id).where(OANotificationDelivery.channel==channel,
             OANotificationDelivery.state.in_(['PENDING','PROCESSING']))
         if tenant_id: query=query.where(OANotificationDelivery.tenant_id==tenant_id)
+        if delivery_id is not None: query=query.where(OANotificationDelivery.id==delivery_id)
         tenants=(await db.scalars(query.distinct().order_by(OANotificationDelivery.tenant_id))).all()
         for tenant in tenants:
             await lock_tenant(db,tenant)
-            await expire(db,tenant,now)
-            rows=(await db.scalars(select(OANotificationDelivery).where(OANotificationDelivery.tenant_id==tenant,
+            await expire(db,tenant,now,delivery_id=delivery_id)
+            query=select(OANotificationDelivery).where(OANotificationDelivery.tenant_id==tenant,
                 OANotificationDelivery.channel==channel,OANotificationDelivery.state=='PENDING',
                 or_(OANotificationDelivery.next_attempt_at.is_(None),OANotificationDelivery.next_attempt_at<=now))
+            if delivery_id is not None: query=query.where(OANotificationDelivery.id==delivery_id)
+            rows=(await db.scalars(query
                 # Scan every due row for this tenant. Unconfigured recipients remain
                 # pending, so a fixed page could otherwise starve a later configured
                 # delivery indefinitely.
@@ -103,6 +119,9 @@ async def complete(factory,delivery_id,token,outcome,*,now=None):
     async with factory() as db:
         initial=await db.get(OANotificationDelivery,delivery_id)
         if not initial: return False
+        if initial.channel=='wecom' and initial.wecom_batch_id:
+            from .oa_wecom_worker import complete as complete_wecom
+            return await complete_wecom(factory,delivery_id,token,outcome,now=now)
         await lock_tenant(db,initial.tenant_id)
         row=await db.scalar(select(OANotificationDelivery).where(OANotificationDelivery.id==delivery_id)
             .with_for_update().execution_options(populate_existing=True))
@@ -129,7 +148,7 @@ async def recover(factory,*,tenant_id=None,now=None,channel='smtp'):
         if tenant_id: query=query.where(OANotificationDelivery.tenant_id==tenant_id)
         for tenant in (await db.scalars(query.distinct().order_by(OANotificationDelivery.tenant_id))).all():
             await lock_tenant(db,tenant)
-            await expire(db,tenant,now)
+            await expire(db,tenant,now,channel=channel)
         await db.commit()
 
 
@@ -139,12 +158,16 @@ async def prepare_send(factory,delivery_id,token,*,now=None):
     async with factory() as db:
         initial=await db.get(OANotificationDelivery,delivery_id)
         if not initial: return None
+        if initial.channel=='wecom' and initial.wecom_batch_id:
+            import sys
+            from .oa_wecom_worker import prepare_send as prepare_wecom
+            return await prepare_wecom(factory,sys.modules[__name__],delivery_id,token,now=now)
         await lock_tenant(db,initial.tenant_id)
         row=await db.scalar(select(OANotificationDelivery).where(OANotificationDelivery.id==delivery_id)
             .with_for_update().execution_options(populate_existing=True))
         if row.state!='PROCESSING' or row.attempt_token!=token: return None
         if row.lease_until<=now:
-            await expire(db,row.tenant_id,now)
+            await expire(db,row.tenant_id,now,delivery_id=row.id)
             await db.commit()
             return None
         notification=await db.get(OANotification,row.notification_id)

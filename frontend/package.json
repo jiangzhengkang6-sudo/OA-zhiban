@@ -16,9 +16,13 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
+    "@tencentcloud/roomkit-web-vue3": "7.0.0",
+    "@tencentcloud/uikit-base-component-vue3": "1.5.0",
+    "@tencentcloud/universal-api": "2.4.1",
     "axios": "^1.7.7",
     "element-plus": "^2.8.4",
     "pinia": "^2.2.2",
+    "tuikit-atomicx-vue3": "6.6.2",
     "vue": "^3.5.10",
     "vue-router": "^4.4.5"
   },

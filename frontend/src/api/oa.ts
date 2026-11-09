@@ -1,7 +1,7 @@
 import client from './client'
 import type {Named,Options,Command,Outcome,Leave,LeaveFields,Workflow,Approval,Balance,Instance,Reconciliation,Definition,Reimbursement,ReimbursementFields,FormalTicket,NotificationItem,NotificationDelivery,Attachment} from '@/types/oa'
 export const oaApi = {
-  options:():Promise<Options>=>client.get('/oa/workflows/options'),
+  options:(resource='workflow',action='read'):Promise<Options>=>client.get('/oa/workflows/options',{params:{resource,action}}),
   workflows:(available=false,scene?:'leave'|'reimbursement'):Promise<Workflow[]>=>client.get('/oa/workflows',{params:{available,...(scene?{scene}:{})}}),
   saveWorkflow:(data:{operation_id:string;expected_revision?:number;department_id:string;code:string;name:string;definition:Definition},id?:string):Promise<Workflow>=>id?client.put(`/oa/workflows/${id}`,data):client.post('/oa/workflows',data),
   publish:(id:string,data:Command):Promise<Outcome<unknown>>=>client.post(`/oa/workflows/${id}/publish`,data),

@@ -34,6 +34,16 @@ beforeEach(() => {
 })
 
 describe('B6 formal OA workbenches', () => {
+  it('群通知拦截与合并原因使用中文展示', async () => {
+    setIdentity([{resource:'notification',action:'read',scope:'self'},{resource:'notification_admin',action:'read',scope:'department'}])
+    const codes=['wecom_policy_blocked','wecom_history_isolated','wecom_event_merged','wecom_nudge_cooldown','wecom_group_interval','wecom_probe_cleanup']
+    vi.mocked(oaApi.deliveries).mockResolvedValue(codes.map((last_code,index)=>({id:String(index),notification_id:'n',recipient_id:'employee',channel:'wecom',state:'CANCELLED',attempt_count:0,last_code,next_attempt_at:null,reviews:[]})))
+    const wrapper=await render(NotificationView,'/oa/notifications')
+    await wrapper.get('[id$="-delivery"]').trigger('click');await flushPromises()
+    for (const text of ['不在群通知白名单内','历史消息已隔离','同一事件已合并','不足两小时','等待合并发送','测试已结束']) expect(wrapper.text()).toContain(text)
+    for (const code of codes) expect(wrapper.text()).not.toContain(code)
+    wrapper.unmount()
+  })
   it('企微授权独立于邮件，保存时不清空现有邮箱', async () => {
     vi.mocked(oaApi.contact).mockResolvedValue({user_id:'employee',email:'existing@example.test',enabled:false,wecom_enabled:false,wecom_available:true})
     vi.mocked(oaApi.saveContact).mockResolvedValue({result:{}} as any)

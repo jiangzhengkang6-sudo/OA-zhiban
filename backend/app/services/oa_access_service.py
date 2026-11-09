@@ -7,7 +7,7 @@ from ..core.errors import AppException, ErrorCode
 from ..models.identity import OADepartment, OAMembership, OAUser
 from .authorization_service import require_fresh_identity, require_permission
 
-OA_RESOURCES = ('leave', 'approval', 'workflow', 'leave_balance', 'workflow_admin','reimbursement','ticket','ticket_handle','ticket_admin','notification','notification_admin')
+OA_RESOURCES = ('leave', 'approval', 'workflow', 'leave_balance', 'workflow_admin','reimbursement','ticket','ticket_handle','ticket_admin','notification','notification_admin','announcement','meeting')
 
 
 def denied():
@@ -47,6 +47,26 @@ def department_permission(actor, resource, action):
                for p in actor.data_scope.get('permissions', []))
 
 
+MANAGEMENT_RESOURCES = {'workflow', 'workflow_admin', 'leave_balance', 'ticket_admin', 'notification_admin'}
+
+
+def organization_management(actor, resource, action):
+    # Organization-wide administration requires both explicit grants, never a role name.
+    return resource in MANAGEMENT_RESOURCES and department_permission(actor, resource, action) and any(
+        p['resource'] == 'organization' and p['action'] == 'write' and p['scope'] == 'department'
+        for p in actor.data_scope.get('permissions', []))
+
+
+async def management_departments(db, actor, resource, action):
+    require_permission(actor, resource, action)
+    if not department_permission(actor, resource, action):
+        raise denied()
+    query = select(OADepartment.id).where(OADepartment.tenant_id == actor.tenant_id, OADepartment.enabled.is_(True))
+    if not organization_management(actor, resource, action):
+        query = query.where(OADepartment.id.in_(actor.depts))
+    return list((await db.scalars(query)).all())
+
+
 async def authorize_oa(db, actor, resource, action, *, target):
     actor = await builtin_actor(db, actor)
     if resource not in OA_RESOURCES or action not in {'read', 'write'} or target.tenant_id != actor.tenant_id:
@@ -57,10 +77,11 @@ async def authorize_oa(db, actor, resource, action, *, target):
         raise denied()
     if resource in {'leave','reimbursement','ticket'} and action == 'write' and not owner:
         raise denied()
-    department_only = resource in {'workflow', 'workflow_admin','ticket_admin','notification_admin'} or resource == 'leave_balance' and action == 'write'
+    department_only = resource in {'workflow', 'workflow_admin','ticket_admin','notification_admin','announcement'} or resource == 'leave_balance' and action == 'write'
     if owner and not department_only:
         return OAAccessContext(actor, target)
-    if not target.department_id or target.department_id not in actor.depts or not department_permission(actor, resource, action):
+    if not target.department_id or not department_permission(actor, resource, action) or (
+        target.department_id not in actor.depts and not organization_management(actor, resource, action)):
         raise denied()
     dept = await db.scalar(select(OADepartment).where(OADepartment.tenant_id == actor.tenant_id,
         OADepartment.id == target.department_id, OADepartment.enabled.is_(True)))

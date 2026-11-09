@@ -28,6 +28,7 @@ def test_m3_manual_business_without_graph_models_or_external_network(oa_db):
         forbidden = AssertionError('M3 manual business invoked AI or external HTTP')
 
         async def run():
+            main.run_scheduler = AsyncMock()
             main.runtime.initialize = AsyncMock(side_effect=forbidden)
             main.runtime.close = AsyncMock(side_effect=forbidden)
             with patch.object(LLMFactory, 'get_llm', side_effect=forbidden), \

@@ -48,7 +48,8 @@ class OAWorkflowInstance(Base, IdentityRow):
     __tablename__ = 'oa_workflow_instance'
     __table_args__ = (tenant_key(__tablename__), tenant_fk('leave_version_id', 'oa_leave_version'),
         tenant_fk('reimbursement_version_id', 'oa_reimbursement_version'),
-        UniqueConstraint('tenant_id', 'leave_version_id'), UniqueConstraint('tenant_id', 'reimbursement_version_id'),
+        UniqueConstraint('tenant_id', 'leave_version_id'),
+        UniqueConstraint('tenant_id', 'reimbursement_version_id', name='uq_oa_workflow_instance_reimbursement_version'),
         CheckConstraint("(scene = 'leave' AND leave_version_id IS NOT NULL AND reimbursement_version_id IS NULL) OR "
             "(scene = 'reimbursement' AND reimbursement_version_id IS NOT NULL AND leave_version_id IS NULL)",name='instance_subject'),
         CheckConstraint('route_revision >= 1 AND revision >= 1', name='instance_revision'),
@@ -82,6 +83,7 @@ class OAWorkflowSeat(Base, IdentityRow):
     __tablename__ = 'oa_workflow_seat'
     __table_args__ = (tenant_key(__tablename__), tenant_fk('node_id', 'oa_workflow_node'),
         tenant_fk('original_user_id', 'oa_user'), tenant_fk('effective_user_id', 'oa_user'),
+        ForeignKeyConstraint(['tenant_id', 'decision_delegation_id'], ['oa_approval_delegation.tenant_id', 'oa_approval_delegation.id'], name='fk_seat_decision_delegation'),
         UniqueConstraint('tenant_id', 'node_id', 'effective_user_id'),
         CheckConstraint("state IN ('PENDING','APPROVED','REJECTED','CANCELLED','CC')", name='seat_state'))
     node_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -93,6 +95,7 @@ class OAWorkflowSeat(Base, IdentityRow):
     substituted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     escalated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     decided_by: Mapped[str | None] = mapped_column(String(64))
+    decision_delegation_id: Mapped[str | None] = mapped_column(String(64))
     decision_note: Mapped[str | None] = mapped_column(String(2000))
 
 

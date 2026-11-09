@@ -56,6 +56,9 @@ async def describe(db,event,recipient):
     operation=await db.get(OAWorkflowOperation,event.operation_id)
     if not operation or operation.tenant_id!=event.tenant_id: return {}
     result=operation.result
+    if event.action.startswith('meeting.'):
+        return dict(kind='meeting',object_id=event.target_id,resource='meeting',
+            invitation_version=event.detail.get('invitation_version'),action=event.action)
     if event.action=='notification.intent':
         if result.get('recipient_id')!=recipient or operation.actor_id!=recipient: return {}
         return intent_source(result.get('source'), recipient)
@@ -109,6 +112,10 @@ async def allowed(db,notification):
         if not department or department!=notification.department_id: return False
         await authorize_oa(db,actor,'notification','read',target=OAAccessTarget(actor.tenant_id,actor.user_id,department))
         source=notification.source
+        if source.get('kind')=='meeting':
+            from .meeting_management_service import access
+            _,meeting=await access(db,actor,source['object_id'])
+            return meeting.invitation_version>0 and meeting.invitation_version==source.get('invitation_version')
         if source.get('kind')=='intent':
             if not intent_source(source, actor.user_id): return False
             if source.get('business'): await check_business(db,actor,source['business'])

@@ -30,10 +30,27 @@ from ...storage.local import LocalObjectStore
 from ...core.config import get_settings
 from ...services import audit_service, knowledge_service
 from ...services import knowledge_version_service
-from ..deps import require_roles
+from ..deps import get_current_user, require_roles
 
 router = APIRouter(prefix="/admin/knowledge", tags=["admin-knowledge"])
 _settings = get_settings()
+
+
+@router.get('/sources')
+async def list_published_sources(
+    session: AsyncSession = Depends(get_db), user=Depends(get_current_user),
+):
+    from ...services import knowledge_reader_service
+    return ok(await knowledge_reader_service.list_published(session, user))
+
+
+@router.get('/sources/{source_id}/versions/{version_id}')
+async def read_published_version(
+    source_id: UUID, version_id: UUID,
+    session: AsyncSession = Depends(get_db), user=Depends(get_current_user),
+):
+    from ...services import knowledge_reader_service
+    return ok(await knowledge_reader_service.read_version(session, user, source_id, version_id))
 
 
 @router.get("")

@@ -64,3 +64,19 @@ def test_extraction_rejects_overflow_instead_of_silently_dropping_actions():
     with pytest.raises(ValueError, match="candidate limit"):
         extract_candidates({"ref": "meeting:M-1:1", "content": "Meeting",
             "action_items": [{"title": str(index)} for index in range(51)]})
+
+
+@pytest.mark.asyncio
+async def test_confirmed_meeting_paragraph_reference_cannot_replace_version_reference(monkeypatch):
+    source = {"ref": "meeting:MTG-1:2", "content": '{"action_items":[{"title":"Prepare checklist","source_refs":["paragraph-1"]}]}',
+        "action_items": [{"title": "Prepare checklist", "source_refs": ["paragraph-1"]}]}
+    llm = SimpleNamespace(last_usage={}, structured=AsyncMock(return_value=WorkTaskDraftDTO(candidates=[
+        {"candidate_id": "action-0", "title": "Prepare checklist", "source_refs": ["paragraph-1"]}])))
+    monkeypatch.setattr(work_task_generator, "get_settings", lambda: SimpleNamespace(llm_provider="deepseek"))
+    monkeypatch.setattr(work_task_generator.LLMFactory, "get_llm", lambda: llm)
+    with pytest.raises(ValueError, match="Unverified source reference"):
+        await work_task_generator.generate(source)
+    assert '["meeting:MTG-1:2"]' in llm.structured.await_args.args[0][0]["content"]
+    llm.structured.return_value = WorkTaskDraftDTO(candidates=[
+        {"candidate_id": "action-0", "title": "Prepare checklist", "source_refs": [source["ref"]]}])
+    assert (await work_task_generator.generate(source))[0]["source_refs"] == [source["ref"]]

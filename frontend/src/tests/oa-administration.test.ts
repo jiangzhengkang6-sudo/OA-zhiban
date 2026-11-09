@@ -1,5 +1,5 @@
 import { mount,flushPromises } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElSelect } from 'element-plus'
 import { beforeEach,it,expect,vi } from 'vitest'
 import Workflow from '@/views/OAWorkflowView.vue'
 import Balances from '@/views/OABalancesView.vue'
@@ -35,6 +35,22 @@ it('retries the identical workflow command with the same operation key',async()=
   await wrapper.get('[data-testid="save-workflow"]').trigger('click');await flushPromises()
   const calls=vi.mocked(oaApi.saveWorkflow).mock.calls
   expect(calls).toHaveLength(2);expect(calls[0][0]).toEqual(calls[1][0]);wrapper.unmount()
+})
+it('locks an existing workflow department while allowing a new workflow department to be selected',async()=>{
+  vi.mocked(oaApi.options).mockResolvedValue({departments:[{id:'dept',name:'研发部'},{id:'product',name:'产品部'}],users:[],roles:[]} as any)
+  vi.mocked(oaApi.workflows).mockResolvedValue([{id:'wf',name:'研发请假',code:'leave_dev',department_id:'dept',revision:1,definition:{schema_version:1,scene:'leave',entry_id:'review',form:{leave_types:['annual'],reason_max_length:2000},rules:{timeout_hours:48,required_attachments:[],calendar:'inclusive_days'},nodes:[{id:'review',kind:'approval',mode:'single',selector:{kind:'manager',levels:1},next_id:'end'},{id:'end',kind:'end'}]}}] as any)
+  vi.mocked(oaApi.saveWorkflow).mockRejectedValue(new Error('保留编辑'))
+  const wrapper=mount(Workflow,{global:{plugins:[ElementPlus]}});await flushPromises()
+  expect(wrapper.get('[aria-label="适用部门"]').attributes('disabled')).toBeDefined()
+  expect(wrapper.getComponent(ElSelect).props('modelValue')).toBe('dept')
+  await wrapper.get('[data-testid="new-workflow"]').trigger('click');await flushPromises()
+  expect(wrapper.get('[aria-label="适用部门"]').attributes('disabled')).toBeUndefined()
+  const department=wrapper.getComponent(ElSelect)
+  department.vm.$emit('update:modelValue','product');department.vm.$emit('change','product')
+  await wrapper.get('input[aria-label="流程名称"]').setValue('产品请假')
+  await wrapper.get('[data-testid="save-workflow"]').trigger('click');await flushPromises()
+  expect(oaApi.saveWorkflow).toHaveBeenCalledWith(expect.objectContaining({department_id:'product',name:'产品请假'}),undefined)
+  wrapper.unmount()
 })
 it('loads reactive definitions without losing entry, rules or branch and cc nodes',async()=>{
   const definition={schema_version:1,scene:'leave',entry_id:'choice',form:{leave_types:['annual'],reason_max_length:1234},rules:{timeout_hours:24,required_attachments:['annual'],calendar:'inclusive_days'},nodes:[

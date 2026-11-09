@@ -38,6 +38,11 @@ async def listing(page:int=1,page_size:int=20,session:AsyncSession=Depends(get_d
     return ok(await service.list_contracts(session,user,page,page_size))
 
 
+@router.get('/reviewers')
+async def reviewers(session:AsyncSession=Depends(get_db),user=Depends(get_current_user)):
+    return ok(await service.reviewer_options(session,user))
+
+
 @router.get('/{contract_id}')
 async def detail(contract_id:str,session:AsyncSession=Depends(get_db),user=Depends(get_current_user)):
     return ok(await service.get_contract(session,user,contract_id))

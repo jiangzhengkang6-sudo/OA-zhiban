@@ -1,6 +1,0 @@
-{
-  "previous_plan_hash": "sha256:5293838f7fbadd5954c4442545042abc08409767a3c0750147ca8d760538ea2f",
-  "previous_revision": 1,
-  "reason": "沿用用户已确认的 inline 模式和已批准 M4 范围；仅刷新因迁移旧规格路径而失效的计划，不扩大任务范围",
-  "evidence": "scope changed: passing evidence invalidated; failures retained"
-}

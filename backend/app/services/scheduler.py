@@ -44,6 +44,10 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
         stop_event: 停止信号（应用关闭时 set）。
     """
     settings = get_settings()
+    if not settings.business_scheduler_enabled:
+        logger.info('业务催办与升级调度保持暂停')
+        await stop_event.wait()
+        return
     interval = settings.scheduler_interval_seconds
     logger.info("催办升级调度器已启动（间隔 %s 秒）", interval)
 
@@ -70,26 +74,37 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
                     await task_db.commit()
         except Exception as exc:
             logger.warning("业务任务提醒扫描失败: %s", exc)
-        if settings.auth_provider == 'builtin':
-            try:
-                from .oa_notification_service import dispatch
-                async with async_session_factory() as notification_db:
-                    await dispatch(notification_db)
-                    await notification_db.commit()
-            except Exception:
-                logger.warning('正式通知入箱失败，保留队列等待重试')
-            try:
-                from .oa_notification_worker import run_once
-                await run_once(async_session_factory)
-            except Exception:
-                logger.warning('正式邮件扫描失败，保留渠道状态等待核对')
-            try:
-                from .oa_notification_worker import run_once
-                await run_once(async_session_factory,channel='wecom')
-            except Exception:
-                logger.warning('正式企业微信扫描失败，保留渠道状态等待核对')
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            pass
+
+
+async def notification_tick(settings):
+    """Inbox dispatch is independent of business scans; external channels opt in."""
+    if settings.auth_provider != 'builtin': return
+    try:
+        from .oa_notification_service import dispatch
+        async with async_session_factory() as db:
+            await dispatch(db)
+            await db.commit()
+    except Exception:
+        logger.warning('正式通知入箱失败，保留队列等待重试')
+    from .oa_notification_worker import run_once
+    for channel, enabled in [('smtp', settings.notification_smtp_worker_enabled), ('wecom', settings.notification_wecom_worker_enabled)]:
+        if not enabled: continue
+        try:
+            await run_once(async_session_factory, channel=channel)
+        except Exception:
+            logger.warning('外部通知扫描失败，保留渠道状态等待核对: %s',channel)
+
+
+async def run_notification_scheduler(stop_event: asyncio.Event):
+    settings = get_settings()
+    while not stop_event.is_set():
+        await notification_tick(settings)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=min(settings.scheduler_interval_seconds, 10))
         except asyncio.TimeoutError:
             pass
 

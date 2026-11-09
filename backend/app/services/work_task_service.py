@@ -53,6 +53,9 @@ async def _available(session, actor, record=None):
 async def load_source(session, actor, source_type, source_id, source_version=None):
     """Only authoritative local sources; source text cannot expand authority."""
     actor = await _identity(session, actor)
+    if source_type == 'email':
+        from .public_mail_service import task_source
+        return await task_source(session, actor, source_id)
     if actor.data_scope.get('identity_provider') == 'builtin':
         from . import oa_derived_source
         if source_type == 'ticket':
@@ -62,8 +65,15 @@ async def load_source(session, actor, source_type, source_id, source_version=Non
         if source_type == 'meeting':
             require_permission(actor, 'meeting', 'read')
     if source_type == "meeting":
-        record = await session.scalar(select(MeetingRecord).where(MeetingRecord.meeting_id == source_id,
-            MeetingRecord.tenant_id == actor.tenant_id, MeetingRecord.owner_id == actor.user_id))
+        from ..models.oa_meeting import OAMeeting
+        scheduled = await session.scalar(select(OAMeeting).where(OAMeeting.tenant_id==actor.tenant_id,
+            OAMeeting.minutes_id==source_id))
+        if scheduled:
+            from .meeting_service import _owned
+            record = await _owned(session,actor,source_id,lock=True)
+        else:
+            record = await session.scalar(select(MeetingRecord).where(MeetingRecord.meeting_id == source_id,
+                MeetingRecord.tenant_id == actor.tenant_id, MeetingRecord.owner_id == actor.user_id))
         if not record:
             _deny()
         version_number = int(source_version) if source_version is not None else record.current_version
@@ -174,6 +184,9 @@ async def _batch_finish(session, actor, batch, command, operation):
 @business_boundary('work_task', 'write')
 async def create_batch(session, actor, payload):
     actor = await _identity(session, actor)
+    if payload.source_type == 'email':
+        from .public_mail_service import claim_task_source
+        await claim_task_source(session, actor, payload.source_id)
     source = await load_source(session, actor, payload.source_type, payload.source_id, payload.source_version)
     command, fresh = await _claim(session, actor, "create_batch", "create_batch", payload)
     if not fresh:
@@ -423,6 +436,14 @@ async def list_tasks(session, actor, page=1, page_size=20):
 
 async def _task_authority(session, actor, task):
     batch = await session.get(WorkTaskBatch, task.batch_id)
+    if task.handoff_department_id and actor.user_id == task.assignee_id:
+        from ..models.identity import OADepartment
+        department = await session.scalar(select(OADepartment.id).where(OADepartment.id == task.handoff_department_id,
+            OADepartment.tenant_id == actor.tenant_id, OADepartment.enabled.is_(True)))
+        if not department or department not in actor.depts:
+            _deny('交接任务的部门资格已变化，请联系管理员重新交接')
+        await _available(session, actor, batch)
+        return
     creator = CurrentUser(user_id=task.creator_id, tenant_id=task.tenant_id)
     await _source_access(session, await _identity(session, creator), batch)
     await _available(session, actor, batch)
@@ -463,6 +484,7 @@ async def update_task(session, actor, task_id, payload):
     if task.status not in {"OPEN", "IN_PROGRESS"} or not payload.metadata_confirmed:
         _deny("仅未结束任务可在显式确认后修改", 422)
     await _assignee(session, actor, payload.assignee_id, payload.priority, payload.sensitive, payload.risk_acknowledged)
+    task.handoff_department_id = None
     if task.due_at != payload.due_at or task.assignee_id != payload.assignee_id:
         task.deadline_version += 1
         task.notification_scan_at = None
@@ -515,9 +537,8 @@ async def notifications(session, actor):
     for notice, task in rows:
         if notice.deadline_version != task.deadline_version:
             continue
-        batch = await session.get(WorkTaskBatch, task.batch_id)
         try:
-            await _source_access(session, actor, batch)
+            await _notification_access(session, actor, task)
         except AppException as exc:
             if exc.http_status not in {403, 404, 422}:
                 raise
@@ -525,6 +546,14 @@ async def notifications(session, actor):
         result.append(dict(id=str(notice.id), task_id=task.task_id, title=task.title, stage=notice.stage,
             due_at=task.due_at, read_at=notice.read_at, created_at=notice.created_at))
     return result
+
+
+async def _notification_access(session, actor, task):
+    if task.handoff_department_id and actor.user_id == task.assignee_id:
+        await _task_authority(session, actor, task)
+    else:
+        batch = await session.get(WorkTaskBatch, task.batch_id)
+        await _source_access(session, actor, batch)
 
 
 @business_boundary('work_task', 'write')
@@ -540,8 +569,7 @@ async def read_notification(session, actor, notification_id, payload):
         raise AppException(ErrorCode.NOT_FOUND, "通知不存在", http_status=404)
     task = await session.get(WorkTask, row.task_id)
     await _task(session, actor, task.task_id)
-    batch = await session.get(WorkTaskBatch, task.batch_id)
-    await _source_access(session, actor, batch)
+    await _notification_access(session, actor, task)
     command, fresh = await _claim(session, actor, notification_id, "read_notification", payload)
     if fresh:
         _expect(task.version, payload.expected_version)

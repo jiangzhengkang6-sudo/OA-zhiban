@@ -13,6 +13,9 @@ from .oa_reimbursement import OAReimbursement, OAReimbursementVersion, OAReimbur
 from .oa_ticket import OATicket,OATicketAssignmentRule,OATicketFeedback
 from .oa_bridge import OABridgeConfirmation,OABridgeResult
 from .oa_notification import OAUserContact,OANotification,OANotificationDelivery,OANotificationAttempt
+from .oa_announcement import OAAnnouncement, OAAnnouncementRead
+from .oa_meeting import OAMeeting, OAMeetingAttendee
+from .meeting_transcription import MeetingTranscription, MeetingUtterance
 from .oa_ai_scope import OAKnowledgeBinding, OAAgentPolicy, OAAgentPolicyVersion, OABusinessAudit
 from .agent_thread import AgentThread
 from .agent_message import AgentMessage
@@ -52,6 +55,7 @@ from .meeting_decision import MeetingDecision
 from .document_record import DocumentRecord
 from .document_draft_version import DocumentDraftVersion
 from .email_record import EmailRecord
+from .public_mail import PublicMailbox, PublicMailboxMember, PublicMailMessage, PublicMailImport
 from .email_draft_version import EmailDraftVersion
 from .work_task_batch import WorkTaskBatch
 from .work_task_draft_version import WorkTaskDraftVersion
@@ -59,6 +63,7 @@ from .work_task import WorkTask
 from .work_task_event import WorkTaskEvent
 from .work_task_notification import WorkTaskNotification
 from .report_record import ReportRecord, ReportVersion
+from .oa_delegation import OAApprovalDelegation
 from .contract_record import ContractRecord
 from .contract_source import ContractSource
 from .contract_review_version import ContractReviewVersion

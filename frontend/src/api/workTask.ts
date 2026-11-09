@@ -19,7 +19,7 @@ export interface WorkTask {
 export interface TaskNotice { id: string; task_id: string; title: string; stage: string; due_at: string; read_at: string | null; created_at: string }
 export interface TaskEvent { action: string; version: number; actor_id: string; details: Record<string, unknown>; created_at: string }
 export interface TaskVersion { version: number; draft: { candidates: WorkTaskCandidate[] }; edited_by: string | null; created_at: string }
-export interface TaskSourceInput { source_type: 'ticket' | 'meeting' | 'approval'; source_id: string; source_version?: number }
+export interface TaskSourceInput { source_type: 'ticket' | 'meeting' | 'approval' | 'email'; source_id: string; source_version?: number }
 export interface TaskCommand { idempotency_key: string; expected_version: number }
 export const workTaskApi = {
   list(params = {}): Promise<{ items: WorkTask[]; total: number; page: number; page_size: number }> { return client.get('/work-tasks', { params }) },

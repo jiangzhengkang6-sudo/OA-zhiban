@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import or_, select
 
 from ..core.errors import AppException, ErrorCode
+from ..core.leave_types import leave_type_code
 from ..core.context import get_trace_id, set_trace_id
 from ..models.identity import OADepartment, OAUser
 from ..models.oa_workflow import OAWorkflowOperation, OAWorkflowInstance, OAWorkflowVersion, OAWorkflowEvent, OAWorkflowOutbox
@@ -118,7 +119,7 @@ class BuiltinGateway:
         rows = await oa_balance_service.list_balances(self.db, actor, user_id)
         if leave_type is None:
             return rows
-        matches = [row for row in rows if row.get("leave_type") == leave_type]
+        matches = [row for row in rows if row.get("leave_type") == leave_type_code(leave_type)]
         if not matches:
             raise AppException(ErrorCode.NOT_FOUND, "未找到对应假期余额", http_status=404)
         return matches

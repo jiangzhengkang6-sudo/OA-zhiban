@@ -236,6 +236,13 @@ def verify_baseline_rollback(target, seed, evidence_root):
     revision = '8cb8fc625d3bb1c175f17cb0321e32837171a6b2'
     heads = compose_run(target, ['exec', '-T', 'db', 'psql', '-U', 'oa', '-d', target.database_name,
         '-X', '-Atc', 'SELECT version_num FROM alembic_version'], stdout=subprocess.PIPE).stdout.decode().split()
+    if set(heads) != {'0029'}:
+        # New schema recovery must not silently certify an older application.
+        with pytest.raises(RuntimeError, match='未经兼容验证'):
+            assert_application_rollback_compatible(revision, set(heads))
+        return {'compatible_baseline': False, 'read_write_approval_replay': False,
+            'status': 'blocked_unsupported_schema', 'database_heads': heads,
+            'baseline': revision}
     assert_application_rollback_compatible(revision, set(heads))
     archive = evidence_root / 'baseline.tar'
     subprocess.run(['git', 'archive', '--format=tar', '-o', str(archive), revision, 'backend/app'], check=True)

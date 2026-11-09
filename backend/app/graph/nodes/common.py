@@ -12,6 +12,7 @@ from ...adapters.factory import get_adapter
 from ...core.enums import AuditAction
 from ...db.session import async_session_factory
 from ...llm.base import LLMFactory
+from ...llm.intent import intent_messages
 from ...llm.schemas import IntentClassification
 from ...services import audit_service, policy_service
 from ..state import AgentState
@@ -111,7 +112,7 @@ async def classify_intent(state: AgentState) -> dict:
     llm = LLMFactory.get_llm()
     question = _last_user_text(state.get("messages") or [])
     result = await llm.structured(
-        [{"role": "user", "content": question or state.get("scene", "")}],
+        intent_messages(question or state.get("scene", "")),
         IntentClassification,
     )
     if formal:

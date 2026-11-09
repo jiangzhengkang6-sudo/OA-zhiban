@@ -34,7 +34,7 @@ const sourceTarget = computed(() => {
   const type = batch.value?.source_type || task.value?.source?.source_type
   const sourceId = batch.value?.source_id || task.value?.source?.source_id
   if (!sourceId) return ''
-  return type === 'meeting' ? '/meetings/' + encodeURIComponent(sourceId) : type === 'ticket' ? '/ticket/' + encodeURIComponent(sourceId) : ''
+  return type === 'email' ? '/emails' : type === 'meeting' ? '/meetings/' + encodeURIComponent(sourceId) : type === 'ticket' ? '/ticket/' + encodeURIComponent(sourceId) : ''
 })
 let serial = 0
 function problem(err: any) { error.value = err?.response?.data?.message || err?.message || '操作失败，请重试' }

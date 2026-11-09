@@ -1,7 +1,7 @@
 """Current-seat authorization and deterministic decisions for manual workflows."""
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from ..models.identity import OAMembership
 from ..models.oa_workflow import OAWorkflowInstance, OAWorkflowNode, OAWorkflowSeat
 from ..schemas.oa_workflow import Selector
@@ -9,6 +9,9 @@ from .oa_access_service import builtin_actor, authorize_oa, OAAccessTarget, tena
 from .oa_command_service import OACommand, CommandOutcome, run_command
 from .oa_workflow_subject import resolve_subject, subject_scene
 from . import oa_workflow_service as workflows, oa_leave_service as leaves, oa_balance_service as balances
+from . import oa_delegation_service as delegations
+from ..models.oa_delegation import OAApprovalDelegation
+from .identity_service import utcnow
 
 
 async def records(db, actor, node_id, *, lock=False):
@@ -55,7 +58,13 @@ async def node_access(db,actor,node_id,*,write=False,lock=False,allow_completed=
     await authorize_oa(db,actor,'approval','write' if write else 'read',target=OAAccessTarget(actor.tenant_id,actor.user_id))
     leave,version,instance,node = await records(db,actor,node_id,lock=lock)
     seats = await seats_for(db,node,lock=lock)
-    seat = next((s for s in seats if s.effective_user_id==actor.user_id),None)
+    seat = next((s for s in seats if s.effective_user_id==actor.user_id or
+        allow_completed and s.decided_by==actor.user_id and s.state in {'APPROVED','REJECTED'}),None)
+    if seat is None:
+        for candidate in seats:
+            if candidate.state=='PENDING' and await delegations.for_seat(db,actor,leave,instance,candidate,seats):
+                seat=candidate
+                break
     if not seat or not await seat_eligible(db,leave,node,seat): raise denied()
     current = active_round(leave,version,instance,node) and node.kind=='approval' and seat.state=='PENDING'
     completed = allow_completed and seat.decided_by==actor.user_id and seat.state in {'APPROVED','REJECTED'}
@@ -69,33 +78,42 @@ def summary(leave,version,instance,node,seat):
         reimbursement_id=leave.id if scene=='reimbursement' else None,business_no=leave.business_no,applicant_id=leave.applicant_id,
         submission_version=version.version,node_id=node.id,node_key=node.node_key,revision=node.revision,
         state=instance.state,seat_state=seat.state,decision_note=seat.decision_note,
-        due_at=node.due_at.isoformat() if node.due_at else None)
+        due_at=node.due_at.isoformat() if node.due_at else None,
+        decision_delegation_id=seat.decision_delegation_id)
 
 
 async def list_items(db,actor,kind):
     if kind not in {'pending','done','cc'}: raise invalid('未知审批列表')
     actor = await builtin_actor(db,actor)
     await authorize_oa(db,actor,'approval','read',target=OAAccessTarget(actor.tenant_id,actor.user_id))
+    now = utcnow()
+    owners = select(OAApprovalDelegation.delegator_id).where(OAApprovalDelegation.tenant_id==actor.tenant_id,
+        OAApprovalDelegation.delegate_id==actor.user_id, OAApprovalDelegation.revoked_at.is_(None),
+        OAApprovalDelegation.starts_at<=now, OAApprovalDelegation.ends_at>now)
     seats = (await db.scalars(select(OAWorkflowSeat).where(OAWorkflowSeat.tenant_id==actor.tenant_id,
-        OAWorkflowSeat.effective_user_id==actor.user_id).order_by(OAWorkflowSeat.created_at.desc()))).all()
+        or_(OAWorkflowSeat.effective_user_id==actor.user_id, OAWorkflowSeat.decided_by==actor.user_id,
+            OAWorkflowSeat.effective_user_id.in_(owners))).order_by(OAWorkflowSeat.created_at.desc()))).all()
     result = []
     for seat in seats:
         leave,version,instance,node = await records(db,actor,seat.node_id)
         if kind=='pending':
             if not active_round(leave,version,instance,node) or node.kind!='approval' or seat.state!='PENDING': continue
             if not await seat_eligible(db,leave,node,seat): continue
+            if seat.effective_user_id!=actor.user_id and not await delegations.for_seat(db,actor,leave,instance,seat,await seats_for(db,node)): continue
         elif kind=='done':
             if seat.decided_by!=actor.user_id or seat.state not in {'APPROVED','REJECTED'}: continue
-        elif seat.state!='CC': continue
-        result.append(summary(leave,version,instance,node,seat))
+        elif seat.state!='CC' or seat.effective_user_id!=actor.user_id: continue
+        item=summary(leave,version,instance,node,seat)
+        item['is_delegated']=seat.effective_user_id!=actor.user_id
+        result.append(item)
     return result
 
 
 async def node_context(db,actor,node_id):
-    _,leave,version,instance,node,seats,seat = await node_access(db,actor,node_id)
+    actor,leave,version,instance,node,seats,seat = await node_access(db,actor,node_id)
     result = summary(leave,version,instance,node,seat)
     result.update(fields=version.fields,attachments=version.attachments,allowed_actions=['approve','reject','return_for_correction'],
-        mode=node.mode,approval_notes=await approval_notes(db,actor,instance.id))
+        mode=node.mode,approval_notes=await approval_notes(db,actor,instance.id),is_delegated=seat.effective_user_id!=actor.user_id)
     return result
 
 
@@ -136,8 +154,13 @@ async def decide(db,actor,node_id,payload):
         # Revalidate every unfinished seat; a changed fixed route needs explicit recovery.
         if any([not await seat_eligible(db,row,node,s) for s in seats if s.state=='PENDING']):
             raise invalid('节点人员资格已变化，请由管理员处理异常')
+        delegation = None
+        if seat.effective_user_id!=actor.user_id:
+            delegation = await delegations.for_seat(db,actor,row,instance,seat,seats)
+            if delegation is None: raise denied()
         seat.state = 'APPROVED' if payload.action=='approve' else 'REJECTED'
         seat.decided_by,seat.decision_note,seat.revision = actor.user_id,payload.note,seat.revision+1
+        seat.decision_delegation_id = delegation.id if delegation else None
         node.revision+=1
         row.revision+=1
         instance.revision+=1
@@ -169,7 +192,9 @@ async def decide(db,actor,node_id,payload):
             leave_revision=row.revision if instance.scene=='leave' else None),recipients=recipients,recipient_access=access,
             detail=dict(instance_id=instance.id,action=payload.action,note=payload.note,reason_code=payload.reason_code,
                 corrections=payload.corrections,
-                approval_note=payload.approval_note,submission_version=version.version),
+                approval_note=payload.approval_note,submission_version=version.version,
+                delegation_id=delegation.id if delegation else None,
+                delegated_for_id=seat.effective_user_id if delegation else None),
             changes=dict(before=dict(state='IN_REVIEW'),after=dict(state=row.state)))
     outcome = await run_command(db,actor,OACommand(kind='approval.decide',target_id=node_id,target_version=str(payload.expected_revision),
         operation_id=payload.operation_id,payload=payload.model_dump(mode='json'),resource='approval',

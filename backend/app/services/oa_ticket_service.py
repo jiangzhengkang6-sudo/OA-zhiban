@@ -209,8 +209,13 @@ async def handle(db,actor,ticket_id,payload):
             if payload.action=='resolve': current.resolution_note=payload.note
         current.revision+=1
         await db.flush()
-        return CommandOutcome(result=view(current),recipients=[current.owner_id],
-            recipient_access={current.owner_id:('ticket',await target(db,actor,current))},
+        recipients=[current.owner_id]
+        recipient_access={current.owner_id:('ticket',await target(db,actor,current))}
+        if payload.action=='reassign' and current.assignee_id!=current.owner_id:
+            recipients.append(current.assignee_id)
+            recipient_access[current.assignee_id]=('ticket_handle',OAAccessTarget(actor.tenant_id,None,current.department_id))
+        return CommandOutcome(result=view(current),recipients=recipients,
+            recipient_access=recipient_access,
             detail=dict(action=payload.action,ticket_id=current.id),changes=dict(before=before,after=dict(state=current.state,assignee_id=current.assignee_id,revision=current.revision)))
     async def reauthorize(): await access(db,actor,ticket_id,action='write',resource='ticket_handle')
     return await run_command(db,actor,OACommand(kind='ticket.handle',target_id=row.id,target_version=str(payload.expected_revision),

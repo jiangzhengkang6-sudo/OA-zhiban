@@ -1,0 +1,20 @@
+{
+  "dataset_id": "public-company-uat-20261022",
+  "reviewed_on": "2026-10-22",
+  "license": "CC-BY-SA-4.0",
+  "license_page": "https://handbook.gitlab.com/handbook/finance/expenses/",
+  "sources": [
+    {"id": "expenses", "url": "https://handbook.gitlab.com/handbook/finance/expenses/", "raw_url": "https://gitlab.com/gitlab-com/content-sites/handbook/-/raw/main/content/handbook/finance/expenses.md", "check_fragments": ["US Team Members are required to only submit receipts for any expenses over $50 USD", "Expense claims over 90 days", "Any exceptions to the policy must be documented", "within 7 working days"]},
+    {"id": "time-away", "url": "https://handbook.gitlab.com/handbook/people-group/time-off-and-absence/time-away-philosophy/", "raw_url": "https://gitlab.com/gitlab-com/content-sites/handbook/-/raw/main/content/handbook/people-group/time-off-and-absence/time-away-philosophy.md", "check_fragments": ["3-day absence requires at least 6 business days", "30 days in the past", "All team members and managers", "Confirm their safety and offer support"]},
+    {"id": "access", "url": "https://handbook.gitlab.com/handbook/eta/corporate-it/end-user-services/access-requests/", "raw_url": "https://gitlab.com/gitlab-com/content-sites/handbook/-/raw/main/content/handbook/eta/corporate-it/end-user-services/access-requests/_index.md", "check_fragments": ["Who the access is for", "Business justification", "Most access requests are now made through", "Create multiple issues if multiple people require access to different systems"]},
+    {"id": "repairs", "url": "https://handbook.gitlab.com/handbook/eta/corporate-it/end-user-services/laptop-management/laptop-repairs/", "raw_url": "https://gitlab.com/gitlab-com/content-sites/handbook/-/raw/main/content/handbook/eta/corporate-it/end-user-services/laptop-management/laptop-repairs/_index.md", "check_fragments": ["Any loss or damage must be reported to IT", "prior", "$1,000 USD", "Broken laptops do not qualify"]}
+  ],
+  "documents": [
+    {"id": "expense-policy", "file": "documents/expense-policy.md", "title": "公开参考｜GitLab｜差旅与费用报销规则（2026-10-22）", "source_ids": ["expenses"]},
+    {"id": "time-away", "file": "documents/time-away.md", "title": "公开参考｜GitLab｜休假记录与工作交接（2026-10-22）", "source_ids": ["time-away"]},
+    {"id": "access-guide", "file": "documents/access-guide.md", "title": "公开参考｜GitLab｜系统权限申请指南（2026-10-22）", "source_ids": ["access"]},
+    {"id": "repair-guide", "file": "documents/repair-guide.md", "title": "公开参考｜GitLab｜办公电脑报修指南（2026-10-22）", "source_ids": ["repairs"]},
+    {"id": "expense-checklist", "file": "documents/expense-checklist.md", "title": "公开参考｜GitLab｜报销业务材料清单（2026-10-22）", "source_ids": ["expenses"]},
+    {"id": "repair-checklist", "file": "documents/repair-checklist.md", "title": "公开参考｜GitLab｜报修业务材料清单（2026-10-22）", "source_ids": ["repairs"]}
+  ]
+}

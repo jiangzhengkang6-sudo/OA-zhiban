@@ -31,6 +31,7 @@ const client: AxiosInstance = axios.create({
 client.interceptors.request.use((config) => {
   if (authState.provider === 'builtin') {
     ;(config as any)._identityRevision = sessionRevision()
+    ;(config as any)._authorizationRevision = authState.authorizationRevision
     if (authState.accessToken) config.headers['Authorization'] = `Bearer ${authState.accessToken}`
   } else config.headers['Authorization'] = `Bearer mock:${getCurrentUserId()}`
   return config
@@ -40,6 +41,7 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => {
     if ((response.config as any)._identityRevision !== undefined && (response.config as any)._identityRevision !== sessionRevision()) return Promise.reject(new Error('会话已变更'))
+    if ((response.config as any)._authorizationRevision !== undefined && (response.config as any)._authorizationRevision !== authState.authorizationRevision) return Promise.reject(new Error('权限已变更，请重新加载'))
     const body = response.data
     if (body && typeof body.code === 'string' && body.code !== '0') {
       ElMessage.error(body.message || '请求失败')
@@ -51,13 +53,23 @@ client.interceptors.response.use(
   async (error) => {
     const original = error.config
     if(original?._identityRevision !== undefined && original._identityRevision !== sessionRevision()) return Promise.reject(new Error('会话已变更'))
+    if(original?._authorizationRevision !== undefined && original._authorizationRevision !== authState.authorizationRevision) return Promise.reject(new Error('权限已变更，请重新加载'))
     if (authState.provider === 'builtin' && error?.response?.status === 401 && original && !original._authRetried) {
       original._authRetried = true
       try {
         if(!authState.accessToken || original.headers?.Authorization === `Bearer ${authState.accessToken}`) await refreshSession()
-        return await client.request(original)
       }
-      catch { clearSession(); window.dispatchEvent(new Event('oa-session-expired')) }
+      catch (refreshError) {
+        if (!authState.accessToken) window.dispatchEvent(new Event('oa-session-expired'))
+        return Promise.reject(refreshError)
+      }
+      if (original._identityRevision !== sessionRevision()) return Promise.reject(new Error('会话已变更'))
+      if (original._authorizationRevision !== authState.authorizationRevision) return Promise.reject(new Error('权限已变更，请重新加载'))
+      return client.request(original)
+    }
+    if (authState.provider === 'builtin' && error?.response?.status === 401 && original?._authRetried) {
+      clearSession()
+      window.dispatchEvent(new Event('oa-session-expired'))
     }
     if (authState.provider === 'builtin' && error?.response?.status === 403) {
       window.dispatchEvent(new Event('oa-permissions-changed'))

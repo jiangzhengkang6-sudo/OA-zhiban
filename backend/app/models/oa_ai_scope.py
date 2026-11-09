@@ -8,12 +8,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base
 from .identity import IdentityRow
+from .oa_workflow import tenant_key
 
 
 class OAKnowledgeBinding(Base, IdentityRow):
     __tablename__ = "oa_knowledge_binding"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "source_id", name="uq_oa_knowledge_binding_source"),
+        tenant_key(__tablename__),
+        UniqueConstraint("tenant_id", "source_id", name="uq_oa_knowledge_binding_0"),
         Index("ix_oa_knowledge_binding_scope", "tenant_id", "department_id", "status"),
     )
 
@@ -28,7 +30,8 @@ class OAKnowledgeBinding(Base, IdentityRow):
 class OAAgentPolicy(Base, IdentityRow):
     __tablename__ = "oa_agent_policy"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "scene", "scope_type", "scope_value", name="uq_oa_agent_policy_scope"),
+        tenant_key(__tablename__),
+        UniqueConstraint("tenant_id", "scene", "scope_type", "scope_value", name="uq_oa_agent_policy_0"),
         Index("ix_oa_agent_policy_lookup", "tenant_id", "scene", "status"),
     )
 
@@ -43,7 +46,8 @@ class OAAgentPolicy(Base, IdentityRow):
 class OAAgentPolicyVersion(Base, IdentityRow):
     __tablename__ = "oa_agent_policy_version"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "policy_id", "version", name="uq_oa_agent_policy_version"),
+        tenant_key(__tablename__),
+        UniqueConstraint("tenant_id", "policy_id", "version", name="uq_oa_agent_policy_version_0"),
         Index("ix_oa_agent_policy_version_status", "tenant_id", "policy_id", "status"),
     )
 
@@ -59,6 +63,7 @@ class OAAgentPolicyVersion(Base, IdentityRow):
 class OABusinessAudit(Base, IdentityRow):
     __tablename__ = "oa_business_audit"
     __table_args__ = (
+        tenant_key(__tablename__),
         Index("ix_oa_business_audit_scope", "tenant_id", "resource", "department_id", "created_at"),
         Index("ix_oa_business_audit_object", "tenant_id", "object_type", "object_id"),
     )

@@ -21,7 +21,7 @@ class KnowledgeVersion(Base, UUIDMixin, TimestampMixin):
     source_id: Mapped[UUID] = mapped_column(ForeignKey("knowledge_source.id"), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
-    permission_tags: Mapped[list] = mapped_column(ARRAY(String(32)), nullable=False, default=list)
+    permission_tags: Mapped[list] = mapped_column(ARRAY(String(64)), nullable=False, default=list)
     owner_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     parse_status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")

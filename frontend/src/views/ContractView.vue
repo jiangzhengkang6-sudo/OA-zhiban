@@ -6,6 +6,7 @@ import { Back, Check, Close, DocumentChecked, Plus, Refresh } from '@element-plu
 import { contractApi } from '@/api/contract'
 import { commandKey, releaseCommandKey } from '@/api/draftCommands'
 import { demoUsers } from '@/utils/roles'
+import { authState, can } from '@/stores/auth'
 import type { ContractResponse, ContractSummary, ContractVersion, RiskDecision } from '@/types/contract'
 import '@/styles/drafting.css'
 
@@ -14,15 +15,16 @@ const id = computed(() => String(route.params.id || ''))
 const record = ref<ContractResponse | null>(null), items = ref<ContractSummary[]>([]), versions = ref<ContractVersion[]>([])
 const loading = ref(false), busy = ref(false), error = ref(''), historyError = ref(''), total = ref(0), page = ref(1)
 const summary = ref(''), comment = ref(''), decisions = ref<RiskDecision[]>([]), selectedVersion = ref<number>()
-const form = reactive({ title: '', reviewer_id: 'u_mgr_001', text: '', mode: 'text' })
+const form = reactive({ title: '', reviewer_id: '', text: '', mode: 'text' })
 const file = ref<File | null>(null)
-const reviewers = demoUsers.filter(user => user.roles.some(role => ['approver', 'admin'].includes(role)))
+const reviewers = ref<{ id: string; name: string }[]>([])
 const labels: Record<string, string> = { CREATED: '待审查', PROCESSING: '分析中', DRAFT_READY: '待人工复核', PAUSED: '已暂停', CONFIRMED: '已确认', REJECTED: '已拒绝' }
 const dispositionLabels = { accepted: '接受风险', mitigated: '已落实缓解措施', needs_revision: '需修订合同' }
 const dirty = computed(() => !!record.value?.draft && summary.value !== record.value.draft.summary)
 const decisionDirty = computed(() => !!comment.value || decisions.value.some(d => !!d.comment))
 const canDecide = computed(() => !busy.value && !dirty.value && !!comment.value.trim() && decisions.value.length === record.value?.draft?.risks.length && decisions.value.every(d => d.comment.trim()))
-const canCreate = computed(() => !!form.title.trim() && !!form.reviewer_id && (form.mode === 'text' ? !!form.text.trim() : !!file.value))
+const canWrite = computed(() => authState.provider !== 'builtin' || can('contract', 'write'))
+const canCreate = computed(() => canWrite.value && !!form.title.trim() && reviewers.value.some(user => user.id === form.reviewer_id) && (form.mode === 'text' ? !!form.text.trim() : !!file.value))
 const history = computed(() => versions.value.find(version => version.version === selectedVersion.value))
 let generation = 0
 function accept(result: ContractResponse) {
@@ -39,8 +41,13 @@ async function load() {
       accept(result)
       try { const rows = await contractApi.versions(target); if (token === generation) versions.value = rows } catch { if (token === generation) historyError.value = '版本记录加载失败' }
     } else {
-      const result = await contractApi.list({ page: page.value, page_size: 20 })
-      if (token === generation) { items.value = result.items; total.value = result.total }
+      reviewers.value = []
+      const [result, people] = await Promise.all([contractApi.list({ page: page.value, page_size: 20 }),
+        !canWrite.value ? Promise.resolve([]) : authState.provider === 'builtin' ? contractApi.reviewers() : Promise.resolve(demoUsers.filter(user => user.roles.some(role => ['approver', 'admin'].includes(role))))])
+      if (token === generation) {
+        items.value = result.items; total.value = result.total; reviewers.value = people
+        if (!people.some(user => user.id === form.reviewer_id)) form.reviewer_id = ''
+      }
     }
   } catch (err) { if (token === generation) error.value = err instanceof Error ? err.message : '合同加载失败' }
   finally { if (token === generation) loading.value = false }
@@ -99,9 +106,9 @@ function evidence(riskId: string) {
     <el-alert v-if="error" :title="error" type="error" :closable="false" /><el-button v-if="error" :disabled="busy" @click="load">重新加载</el-button>
     <el-skeleton v-if="loading" :rows="8" animated />
     <div v-else-if="!id" class="draft-layout">
-      <section><h2>新建审查</h2><el-form label-position="top" :disabled="busy">
+      <section v-if="canWrite"><h2>新建审查</h2><el-form label-position="top" :disabled="busy">
         <el-form-item label="合同名称" required><el-input v-model="form.title" aria-label="合同名称" maxlength="255" /></el-form-item>
-        <el-form-item label="指定复核人" required><el-select v-model="form.reviewer_id" aria-label="指定复核人"><el-option v-for="user in reviewers" :key="user.id" :label="user.name" :value="user.id" /></el-select></el-form-item>
+        <el-form-item label="指定复核人" required><el-select v-model="form.reviewer_id" aria-label="指定复核人" filterable placeholder="选择复核人" :no-data-text="error ? '人员加载失败，请重试' : '暂无具备合同复核权限的成员'"><el-option v-for="user in reviewers" :key="user.id" :label="user.name" :value="user.id" /></el-select></el-form-item>
         <el-form-item label="材料"><el-radio-group v-model="form.mode"><el-radio-button value="text">粘贴文本</el-radio-button><el-radio-button value="file">上传文件</el-radio-button></el-radio-group></el-form-item>
         <el-form-item v-if="form.mode === 'text'" label="合同原文" required><el-input v-model="form.text" aria-label="合同原文" type="textarea" :rows="14" maxlength="100000" /></el-form-item>
         <el-form-item v-else label="TXT / 文本型 PDF · 最大 5 MiB"><input aria-label="合同文件" type="file" accept=".txt,.pdf" :disabled="busy" @change="chooseFile" /></el-form-item>
@@ -113,7 +120,7 @@ function evidence(riskId: string) {
       <el-alert v-if="record.error" :title="record.error.message" :description="'追踪编号：' + record.error.trace_id" type="error" :closable="false" />
       <el-alert v-if="record.scan_status !== 'CLEAN'" :title="'文件扫描状态：' + record.scan_status" type="warning" :closable="false" />
       <div class="draft-layout">
-        <section><h2>合同原文</h2><dl class="metadata-list"><dt>复核人</dt><dd>{{ demoUsers.find(user => user.id === record!.reviewer_id)?.name || record.reviewer_id }}</dd><dt>内容校验值</dt><dd>{{ record.source_hash }}</dd></dl>
+        <section><h2>合同原文</h2><dl class="metadata-list"><dt>复核人</dt><dd>{{ record.reviewer_name || (authState.provider !== 'builtin' ? demoUsers.find(user => user.id === record!.reviewer_id)?.name : '') || record.reviewer_id }}</dd><dt>内容校验值</dt><dd>{{ record.source_hash }}</dd></dl>
           <article v-for="paragraph in record.paragraphs" :id="'contract-paragraph-' + paragraph.paragraph" :key="paragraph.paragraph" class="source"><small>{{ paragraph.page ? `第 ${paragraph.page} 页 · ` : '' }}第 {{ paragraph.paragraph }} 段</small><p>{{ paragraph.quote }}</p></article>
         </section>
         <section><h2>审查结果</h2><div class="toolbar"><el-button v-if="record.available_actions.includes('review')" :icon="Plus" :loading="busy" :disabled="dirty || record.scan_status !== 'CLEAN'" @click="command('review')">{{ record.draft ? '重新审查' : '开始审查' }}</el-button><el-button v-if="record.available_actions.includes('retry')" :icon="Refresh" :loading="busy" @click="command('retry')">继续分析</el-button><el-button v-if="record.available_actions.includes('rescan')" :icon="Refresh" :loading="busy" @click="command('rescan')">重新扫描</el-button></div>

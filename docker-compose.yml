@@ -22,7 +22,7 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
-    environment:
+    environment: &oa_backend_environment
       ENVIRONMENT: ${ENVIRONMENT:-production}
       AUTH_PROVIDER: ${AUTH_PROVIDER:-mock}
       AUTH_TENANT_ID: ${AUTH_TENANT_ID:-local}
@@ -39,6 +39,18 @@ services:
       LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-ark}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-10}
       MEETING_LLM_TIMEOUT_SECONDS: ${MEETING_LLM_TIMEOUT_SECONDS:-45}
+      TRTC_SDK_APP_ID: ${TRTC_SDK_APP_ID:-0}
+      TRTC_SDK_SECRET_KEY: ${TRTC_SDK_SECRET_KEY:-}
+      TRTC_USER_SIG_EXPIRE_SECONDS: ${TRTC_USER_SIG_EXPIRE_SECONDS:-3600}
+      TRTC_ADMIN_USER_ID: ${TRTC_ADMIN_USER_ID:-administrator}
+      MEETING_TRANSCRIPTION_ENABLED: ${MEETING_TRANSCRIPTION_ENABLED:-false}
+      MEETING_TRANSCRIPTION_SECRET_ID: ${MEETING_TRANSCRIPTION_SECRET_ID:-}
+      MEETING_TRANSCRIPTION_SECRET_KEY: ${MEETING_TRANSCRIPTION_SECRET_KEY:-}
+      MEETING_TRANSCRIPTION_CALLBACK_KEY: ${MEETING_TRANSCRIPTION_CALLBACK_KEY:-}
+      MEETING_TRANSCRIPTION_CALLBACK_URL: ${MEETING_TRANSCRIPTION_CALLBACK_URL:-}
+      MEETING_TRANSCRIPTION_REGION: ${MEETING_TRANSCRIPTION_REGION:-ap-guangzhou}
+      MEETING_TRANSCRIPTION_LANGUAGE: ${MEETING_TRANSCRIPTION_LANGUAGE:-bigmodel-zh}
+      MEETING_TRANSCRIPTION_RETENTION_DAYS: ${MEETING_TRANSCRIPTION_RETENTION_DAYS:-30}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-flash}
@@ -76,6 +88,18 @@ services:
       ATTACHMENT_SCAN_TIMEOUT_SECONDS: ${ATTACHMENT_SCAN_TIMEOUT_SECONDS:-10}
       ATTACHMENT_STORAGE_DIR: /app/data/leave_attachments
       KNOWLEDGE_STORAGE_DIR: /app/data/knowledge_files
+      OPS_STATE_DIR: /app/data/operations-monitor
+      OPS_HEALTH_URL: http://backend:8001/healthz
+      OPS_POLL_SECONDS: ${OPS_POLL_SECONDS:-60}
+      OPS_PROBE_TIMEOUT_SECONDS: ${OPS_PROBE_TIMEOUT_SECONDS:-10}
+      OPS_BACKLOG_AGE_SECONDS: ${OPS_BACKLOG_AGE_SECONDS:-120}
+      OPS_BACKUP_MAX_AGE_HOURS: ${OPS_BACKUP_MAX_AGE_HOURS:-25}
+      OPS_BACKUP_MAX_RUNTIME_SECONDS: ${OPS_BACKUP_MAX_RUNTIME_SECONDS:-3600}
+      OPS_MODEL_PROBES_ENABLED: ${OPS_MODEL_PROBES_ENABLED:-false}
+      OPS_ALERT_DELIVERY_ENABLED: ${OPS_ALERT_DELIVERY_ENABLED:-false}
+      OPS_ALERT_EMAIL_TO: ${OPS_ALERT_EMAIL_TO:-}
+      OPS_LOG_FILES: '${OPS_LOG_FILES:-[]}'
+      OPS_LOG_KEYWORDS: '${OPS_LOG_KEYWORDS:-["ERROR","CRITICAL","Traceback"]}'
     volumes:
       - oa_files:/app/data
     depends_on:
@@ -89,6 +113,23 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+
+  monitor:
+    profiles: [monitoring]
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: [python, scripts/monitor_operations.py]
+    environment:
+      <<: *oa_backend_environment
+    volumes:
+      - oa_files:/app/data
+    healthcheck:
+      test: [CMD, python, -c, "import json,datetime; s=json.load(open('/app/data/operations-monitor/state.json')); age=(datetime.datetime.now(datetime.timezone.utc)-datetime.datetime.fromisoformat(s['checked_at'])).total_seconds(); assert -30 <= age < 180"]
+      interval: 60s
+      timeout: 5s
+      retries: 2
+      start_period: 60s
 
   frontend:
     build:

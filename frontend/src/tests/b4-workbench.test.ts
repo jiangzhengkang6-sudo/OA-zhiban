@@ -31,6 +31,7 @@ const approval = { thread_id: 't1', application_id: 'a1', scene: 'leave', status
 async function render(component: any, url: string) {
   const pinia = createPinia(); setActivePinia(pinia)
   const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/', redirect: '/tasks' },
     { path: '/leaves/:applicationId?', component: LeaveFormView },
     { path: '/leave/:threadId', component: LeaveDetailView },
     { path: '/approvals', component: ApprovalInboxView },
@@ -141,7 +142,7 @@ describe('B4 workbench', () => {
   })
   it('hides admin menus from employees and exposes inbox to approvers', async () => {
     const { wrapper } = await render(App, '/tasks')
-    expect(wrapper.text()).toContain('我的请假'); expect(wrapper.text()).toContain('会议文本'); expect(wrapper.text()).not.toContain('智能配置')
+    expect(wrapper.text()).toContain('我的请假'); expect(wrapper.text()).toContain('会议管理'); expect(wrapper.text()).not.toContain('智能配置')
     wrapper.unmount()
     localStorage.setItem('oa_current_user', 'u_mgr_002')
     const manager = await render(App, '/tasks')

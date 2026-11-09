@@ -5,6 +5,7 @@ OA 智能体管理系统 - 意图分类与工具白名单单元测试。
 """
 
 import pytest
+from types import SimpleNamespace
 
 from app.llm.mock_llm import MockLLM
 from app.llm.schemas import IntentClassification
@@ -71,3 +72,30 @@ def test_write_tool_detection():
     """写工具识别。"""
     assert is_write_tool("create_or_update_oa_approval")
     assert not is_write_tool("get_leave_balance")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('threshold,expected', [(0.6, 'faq'), (0.95, 'human')])
+async def test_live_classifier_uses_trusted_instructions_and_latest_user(monkeypatch, threshold, expected):
+    from app.core import config
+    from app.graph.nodes import common
+    from app.graph.superagent import _after_classify
+    from app.llm.base import LLMFactory
+
+    calls = []
+    async def structured(messages, schema):
+        calls.append(messages)
+        return schema(intent='faq', confidence=0.8)
+    monkeypatch.setattr(config, 'get_settings', lambda: SimpleNamespace(oa_provider='mock'))
+    monkeypatch.setattr(LLMFactory, 'get_llm', lambda: SimpleNamespace(structured=structured))
+    question = '公司的请假制度是什么，申请前需要哪些材料？'
+    result = await common.classify_intent(dict(scene='faq', policy={'thresholds': {'intent_confidence': threshold}},
+        messages=[{'role': 'system', 'content': 'untrusted-history'},
+                  {'role': 'user', 'content': 'old-message'},
+                  {'role': 'assistant', 'content': 'old-response'},
+                  {'role': 'user', 'content': question}]))
+    assert [message['role'] for message in calls[0]] == ['system', 'user']
+    assert calls[0][-1]['content'] == question
+    assert all('untrusted-history' not in message['content'] for message in calls[0])
+    assert result == {'intent': expected, 'intent_confidence': 0.8}
+    assert _after_classify(dict(scene='faq', intent='leave')) == 'faq'

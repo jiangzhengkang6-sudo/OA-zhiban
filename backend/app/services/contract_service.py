@@ -47,6 +47,27 @@ async def _reviewer(session, actor, reviewer_id):
     return context
 
 
+async def reviewer_options(session, actor):
+    from ..models.identity import OAUser
+    from .identity_service import current_identity
+    actor = await _identity(session, actor)
+    require_permission(actor, 'contract', 'write')
+    if actor.data_scope.get('identity_provider') != 'builtin':
+        raise AppException(ErrorCode.FORBIDDEN, '成员目录仅适用于正式账号', http_status=403)
+    users = (await session.scalars(select(OAUser).where(OAUser.tenant_id == actor.tenant_id,
+        OAUser.status == 'active').order_by(OAUser.display_name, OAUser.id))).all()
+    result = []
+    for user in users:
+        member = await current_identity(session, user)
+        try:
+            require_permission(member, 'contract', 'read')
+            require_permission(member, 'contract', 'write')
+        except AppException:
+            continue
+        result.append(dict(id=user.id, name=user.display_name))
+    return result
+
+
 def _scope(actor):
     participant = ContractRecord.owner_id == actor.user_id
     if actor.data_scope.get('identity_provider') == 'builtin' or set(actor.roles).intersection({'approver','admin'}):
@@ -104,11 +125,14 @@ def _actions(record, actor):
 
 
 async def _response(session, record, actor):
+    from ..models.identity import OAUser
+    reviewer_name = await session.scalar(select(OAUser.display_name).where(
+        OAUser.id == record.reviewer_id, OAUser.tenant_id == actor.tenant_id)) if actor.data_scope.get('identity_provider') == 'builtin' else None
     source = await _source(session,record)
     version = await session.scalar(select(ContractReviewVersion).where(ContractReviewVersion.contract_id == record.id,
         ContractReviewVersion.version == record.current_version)) if record.current_version else None
     return dict(contract_id=record.contract_id,thread_id=str(record.thread_id),title=record.title,status=record.status,
-        version=record.current_version,reviewer_id=record.reviewer_id,owner_id=record.owner_id,
+        version=record.current_version,reviewer_id=record.reviewer_id,reviewer_name=reviewer_name,owner_id=record.owner_id,
         available_actions=_actions(record,actor),source_id=str(source.id),source_hash=source.sha256,
         scan_status=source.scan_status,paragraphs=source.paragraphs,source_text=source.text,
         draft=version.draft if version else None,node_trace=record.node_state.get('node_trace',[]),

@@ -9,6 +9,27 @@ from tests.integration.test_identity_sessions import identity_db, new_admin, con
 from tests.integration.test_identity_authorization import builtin
 
 
+async def test_knowledge_permissions_are_explicit_and_manageable(identity_db, builtin):
+    from app.services import organization_service as org
+    from app.schemas.organization import RoleInput, UserCreate, UserUpdate
+    from app.services.authorization_service import require_permission
+    tenant, uid = await new_admin(identity_db)
+    async with identity_db() as db:
+        admin = await identities.current_identity(db, await db.get(OAUser, uid))
+        employee = await org.create_user(db, admin, UserCreate(username='reader', display_name='Reader', password='Test-password-123!'))
+        reader = await identities.current_identity(db, await db.get(OAUser, employee['id']))
+        with pytest.raises(AppException):
+            require_permission(reader, 'knowledge', 'read')
+        assert 'knowledge' in (await org.overview(db, admin))['resources']
+        role = await org.save_role(db, admin, RoleInput(code='knowledge_reader', name='Knowledge reader',
+            permissions=[dict(resource='knowledge', action='read', scope='department')]))
+        await org.update_user(db, admin, employee['id'], UserUpdate(display_name='Reader', role_ids=[role['id']]))
+        reader = await identities.current_identity(db, await db.get(OAUser, employee['id'], populate_existing=True))
+        require_permission(reader, 'knowledge', 'read')
+        with pytest.raises(AppException):
+            require_permission(reader, 'knowledge', 'write')
+
+
 async def test_organization_lifecycle_cycles_and_last_admin(identity_db, builtin):
     from app.services import organization_service as org
     from app.schemas.organization import DepartmentInput, UserCreate, UserUpdate

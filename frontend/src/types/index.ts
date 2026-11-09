@@ -169,6 +169,9 @@ export interface Answer {
     title: string
     source_location: string
     similarity: number
+    source_id?: string
+    version_id?: string
+    chunk_id?: string
   }>
   confidence: number
 }
@@ -271,6 +274,20 @@ export interface KnowledgeVersion {
   expire_at?: string | null
 }
 
+export interface PublishedKnowledge {
+  source_id: string
+  version_id: string
+  title: string
+  version: number
+  status: string
+  effective_at?: string | null
+  expire_at?: string | null
+}
+
+export interface KnowledgeReading extends PublishedKnowledge {
+  blocks: Array<{ id: string; text: string; source_location: string }>
+}
+
 export interface KnowledgePreview {
   filename: string
   format: string
@@ -304,7 +321,7 @@ export interface MeetingSegment { segment_id: string; ordinal: number; start_off
 export interface MeetingDecisionCandidate { text: string; source_refs: string[]; confidence: 'explicit' | 'inferred' | 'needs_confirmation' }
 export interface MeetingActionItem { title: string; assignee_candidate?: string | null; due_at_candidate?: string | null; priority: 'low' | 'medium' | 'high'; source_refs: string[]; needs_confirmation: boolean }
 export interface MeetingDraft { summary: string; topics: string[]; decisions: MeetingDecisionCandidate[]; action_items: MeetingActionItem[]; source_refs: string[] }
-export interface MeetingResponse { meeting_id: string; thread_id?: string | null; status: MeetingStatus; title: string; version?: number | null; segments: MeetingSegment[]; draft?: MeetingDraft | null; available_actions: string[]; trace_id: string; external_writes: boolean; created_at?: string | null; updated_at?: string | null }
+export interface MeetingResponse { meeting_id: string; schedule_id?:string|null; can_create_tasks?:boolean; thread_id?: string | null; status: MeetingStatus; title: string; version?: number | null; segments: MeetingSegment[]; draft?: MeetingDraft | null; available_actions: string[]; trace_id: string; external_writes: boolean; created_at?: string | null; updated_at?: string | null }
 export interface MeetingSummary { meeting_id: string; thread_id?: string | null; title: string; status: MeetingStatus; version?: number | null; available_actions: string[]; external_writes: boolean; created_at?: string | null; updated_at?: string | null }
 export interface MeetingPage extends PageResult<MeetingSummary> {}
 export interface MeetingCreateRequest { title: string; content: string; source_type?: 'paste' | 'import' | 'api'; idempotency_key?: string }

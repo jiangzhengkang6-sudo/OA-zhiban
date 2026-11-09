@@ -30,7 +30,7 @@ async def get_current_user(request: Request, session: AsyncSession = Depends(get
     user = await require_fresh_identity(user, session=session)
     from ..core.config import get_settings
     path = request.url.path.removeprefix(get_settings().api_prefix).strip('/')
-    if path.split('/')[0] not in {'oa', 'organization'}:
+    if path.split('/')[0] not in {'oa', 'organization', 'meeting-events', 'public-mail'}:
         from ..services.authorization_service import require_ai_enabled
         require_ai_enabled()
     if user.data_scope.get('identity_provider') == 'builtin':
@@ -43,6 +43,19 @@ async def get_current_user(request: Request, session: AsyncSession = Depends(get
         # Each formal route below has a separate permission check and service boundary.
         formal = {'/oa/workflows': 'workflow','/oa/leaves':'leave','/oa/balances':'leave_balance',
                   '/oa/approvals':'approval','/oa/administration':'workflow_admin','/oa/reimbursements':'reimbursement'}
+        if path=='oa/delegations' or path.startswith('oa/delegations/'):
+            require_permission(user,'approval','read' if request.method in {'GET','HEAD'} else 'write')
+            return user
+        if path=='oa/announcements' or path.startswith('oa/announcements/'):
+            action='read' if request.method in {'GET','HEAD'} or request.method=='POST' and path.count('/')==3 and path.endswith('/read') else 'write'
+            require_permission(user,'announcement',action)
+            return user
+        if path=='oa/work-items' and request.method=='GET':
+            permissions=user.data_scope.get('permissions',[])
+            resources={'approval','work_task'} if get_settings().ai_enabled else {'approval'}
+            if not any(p['resource'] in resources and p['action']=='read' for p in permissions):
+                raise AppException(ErrorCode.FORBIDDEN,'当前账号没有待办读取权限',http_status=403)
+            return user
         if path=='oa/notifications' or path.startswith('oa/notifications/'):
             action='read' if request.method in {'GET','HEAD'} else 'write'
             resource='notification'
@@ -80,8 +93,9 @@ async def get_current_user(request: Request, session: AsyncSession = Depends(get
             if formal_path == route or formal_path.startswith(route + '/'):
                 require_permission(user, formal_resource, 'read' if request.method in {'GET','HEAD'} else 'write')
                 return user
-        resources = {'organization': 'organization', 'meetings': 'meeting', 'documents': 'document',
-            'emails': 'email', 'work-tasks': 'work_task', 'reports': 'report', 'contracts': 'contract',
+        resources = {'organization': 'organization', 'meetings': 'meeting', 'meeting-events':'meeting',
+            'meeting-transcriptions':'meeting', 'documents': 'document',
+            'emails': 'email', 'public-mail': 'email', 'work-tasks': 'work_task', 'reports': 'report', 'contracts': 'contract',
             'threads': 'thread', 'tasks': 'task', 'knowledge': 'knowledge', 'audit': 'audit',
             'audit-exports': 'audit', 'agent-policies': 'policy', 'agent-policy-versions': 'policy',
             'readiness': 'operations', 'operations': 'operations', 'degradation': 'operations'}
@@ -96,7 +110,10 @@ async def get_current_user(request: Request, session: AsyncSession = Depends(get
         if resource is None:
             raise AppException(ErrorCode.FORBIDDEN, '接口尚未配置正式权限', http_status=403)
         try:
-            require_permission(user, resource, 'read' if request.method in {'GET','HEAD'} else 'write')
+            # Admission issues viewer credentials; the service still checks invitation and state.
+            video_admission = (prefix == 'meeting-events' and request.method == 'POST'
+                               and path.count('/') == 2 and path.endswith('/video-session'))
+            require_permission(user, resource, 'read' if request.method in {'GET','HEAD'} or video_admission else 'write')
         except AppException:
             from ..services.identity_service import audit
             audit(session, user.user_id, 'identity.denied', resource, result='fail')

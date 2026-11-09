@@ -12,7 +12,7 @@ from ..schemas.oa_workflow import ValidatedDefinition, WorkflowSave
 from .identity_service import current_identity, lock_tenant
 from .authorization_service import require_permission
 from .oa_access_service import (authorize_oa, OAAccessTarget, builtin_actor, tenant_row,
-                               invalid, revision_conflict, user_department, department_permission)
+                               invalid, revision_conflict, user_department, department_permission, management_departments)
 from .oa_command_service import OACommand, CommandOutcome, run_command, canonical_hash
 
 
@@ -67,8 +67,9 @@ async def list_definitions(db, actor, *, available=False,scene=None):
     if not available and not department_permission(actor, 'workflow', 'read'):
         from .oa_access_service import denied
         raise denied()
+    departments = actor.depts if available else await management_departments(db, actor, 'workflow', 'read')
     rows = (await db.scalars(select(OAWorkflowDefinition).where(OAWorkflowDefinition.tenant_id == actor.tenant_id,
-        OAWorkflowDefinition.department_id.in_(actor.depts)).order_by(OAWorkflowDefinition.name))).all()
+        OAWorkflowDefinition.department_id.in_(departments)).order_by(OAWorkflowDefinition.name))).all()
     result = []
     for row in rows:
         if selected and row.scene!=selected: continue
@@ -81,16 +82,18 @@ async def list_definitions(db, actor, *, available=False,scene=None):
     return result
 
 
-async def workbench_options(db, actor):
+async def workbench_options(db, actor, *, resource='workflow', action='read'):
     actor = await builtin_actor(db, actor)
-    if not any(department_permission(actor, resource, 'read') for resource in ('workflow','leave_balance','workflow_admin')):
+    if resource not in {'workflow', 'leave_balance', 'workflow_admin', 'ticket_admin'} or action not in {'read', 'write'}:
         from .oa_access_service import denied
         raise denied()
+    department_ids = await management_departments(db, actor, resource, action)
     departments = (await db.scalars(select(OADepartment).where(OADepartment.tenant_id==actor.tenant_id,
-        OADepartment.id.in_(actor.depts)))).all()
+        OADepartment.id.in_(department_ids)).order_by(OADepartment.name))).all()
     users = (await db.scalars(select(OAUser).join(OAMembership,
         (OAMembership.tenant_id==OAUser.tenant_id)&(OAMembership.user_id==OAUser.id)).where(
-        OAUser.tenant_id==actor.tenant_id,OAMembership.department_id.in_(actor.depts),OAUser.status=='active'))).unique().all()
+        OAUser.tenant_id==actor.tenant_id,OAMembership.department_id.in_(department_ids),OAUser.status=='active')
+        .order_by(OAUser.display_name, OAUser.id))).unique().all()
     roles = (await db.scalars(select(OARole).where(OARole.tenant_id==actor.tenant_id))).all()
     return dict(departments=[dict(id=d.id,name=d.name) for d in departments],
         users=[dict(id=u.id,name=u.display_name) for u in users],roles=[dict(id=r.id,name=r.name) for r in roles])

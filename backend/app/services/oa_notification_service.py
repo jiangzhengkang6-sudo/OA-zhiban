@@ -12,17 +12,20 @@ from .oa_access_service import builtin_actor,authorize_oa,OAAccessTarget,user_de
 from .oa_command_service import OACommand,CommandOutcome,run_command,canonical_hash
 from .identity_service import lock_tenant
 from . import oa_notification_source as sources
+from . import oa_wecom_policy as wecom_policy
 
 
-async def dispatch(db,*,tenant_id=None,limit=100):
+async def dispatch(db,*,tenant_id=None,limit=100,outbox_id=None):
     query=select(OAWorkflowOutbox.tenant_id).where(OAWorkflowOutbox.status=='PENDING')
     if tenant_id: query=query.where(OAWorkflowOutbox.tenant_id==tenant_id)
+    if outbox_id is not None: query=query.where(OAWorkflowOutbox.id==outbox_id)
     tenants=(await db.scalars(query.distinct().order_by(OAWorkflowOutbox.tenant_id))).all()
     count=0
     for tenant in tenants:
         await lock_tenant(db,tenant)
-        rows=(await db.scalars(select(OAWorkflowOutbox).where(OAWorkflowOutbox.tenant_id==tenant,
-            OAWorkflowOutbox.status=='PENDING').order_by(OAWorkflowOutbox.created_at,OAWorkflowOutbox.id)
+        query=select(OAWorkflowOutbox).where(OAWorkflowOutbox.tenant_id==tenant,OAWorkflowOutbox.status=='PENDING')
+        if outbox_id is not None: query=query.where(OAWorkflowOutbox.id==outbox_id)
+        rows=(await db.scalars(query.order_by(OAWorkflowOutbox.created_at,OAWorkflowOutbox.id)
             .limit(max(0,limit-count)).with_for_update(skip_locked=True))).all()
         for row in rows:
             exists=await db.scalar(select(OANotification).where(OANotification.tenant_id==tenant,OANotification.source_outbox_id==row.id,
@@ -42,8 +45,12 @@ async def dispatch(db,*,tenant_id=None,limit=100):
                     OAUserContact.user_id==notification.recipient_id))
                 fingerprint=destination(get_settings(),tenant,notification.department_id)
                 if permitted and fingerprint and contact and contact.wecom_enabled:
+                    policy,reason=await wecom_policy.classify(db,notification,get_settings())
                     db.add(OANotificationDelivery(tenant_id=tenant,notification_id=notification.id,channel='wecom',
-                        state='PENDING',destination_hash=fingerprint,
+                        state='PENDING' if policy else 'CANCELLED',destination_hash=fingerprint,last_code=reason,
+                        wecom_event_key=policy['event_key'] if policy else None,
+                        wecom_business_key=policy['business_key'] if policy else None,
+                        wecom_category=policy['category'] if policy else None,
                         message_id='<oa-'+notification.id+'@notification.invalid>',attempt_count=0))
             row.status='SENT'
             count+=1
@@ -64,7 +71,10 @@ async def item_view(db,row):
         OANotificationDelivery.notification_id==row.id))).all()
     states={item.channel:item.state for item in deliveries}
     source=row.source
-    return dict(id=row.id,title='有新的业务处理提醒',created_at=row.created_at.isoformat(),
+    meeting_titles={'meeting.publish':'收到会议邀请','meeting.save':'会议安排已更新','meeting.start':'会议已开始',
+        'meeting.end':'会议已结束','meeting.cancel':'会议已取消','meeting.reply':'收到参会反馈','meeting.confirmed':'会议纪要已确认'}
+    title=meeting_titles.get(source.get('action'),'会议安排提醒') if source.get('kind')=='meeting' else '有新的业务处理提醒'
+    return dict(id=row.id,title=title,created_at=row.created_at.isoformat(),
         read_at=row.read_at.isoformat() if row.read_at else None,source_kind=source.get('kind'),
         object_id=source.get('object_id'),instance_id=source.get('instance_id'),resource=source.get('resource'),
         inbox_state=states.get('inbox'),smtp_state=states.get('smtp'),wecom_state=states.get('wecom'),
@@ -185,6 +195,9 @@ async def retry_unknown(db,actor,delivery_id,*,note,operation_id):
         await management_target(db,actor,notification,'write')
         if current.channel not in {'smtp','wecom'} or current.state!='UNKNOWN': raise invalid('仅可核对并重试结果不明的通知')
         if not await sources.allowed(db,notification): raise invalid('通知来源或收件人已失效')
+        if current.channel=='wecom':
+            policy,_=await wecom_policy.classify(db,notification,get_settings())
+            if not policy: raise invalid('该消息不在企业微信白名单内或已被历史隔离')
         current.state,current.next_attempt_at,current.attempt_token,current.lease_until='PENDING',None,None,None
         current.last_code='manual_retry_possible_duplicate'
         await db.flush()

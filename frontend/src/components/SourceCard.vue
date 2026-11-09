@@ -4,8 +4,11 @@
  *
  * 展示 FAQ 回答的可定位来源（文档标题、段落位置、相似度）。
  */
+import { sourceLocation } from '@/utils/source-location'
+
 defineProps<{
-  sources?: Array<{ document_id?: string; title?: string; source_location?: string; similarity?: number }>
+  sources?: Array<{ document_id?: string; title?: string; source_location?: string; similarity?: number;
+    source_id?: string; version_id?: string; chunk_id?: string }>
 }>()
 </script>
 
@@ -20,8 +23,10 @@ defineProps<{
         placement="top"
         type="primary"
       >
-        <div class="src-title">{{ s.title || '未命名文档' }}</div>
-        <div class="src-loc">{{ s.source_location || '-' }}</div>
+        <router-link v-if="s.source_id && s.version_id" class="src-title"
+          :to="`/knowledge/sources/${encodeURIComponent(s.source_id)}/versions/${encodeURIComponent(s.version_id)}${s.chunk_id ? '#chunk-' + encodeURIComponent(s.chunk_id) : ''}`">{{ s.title || '未命名文档' }}</router-link>
+        <div v-else class="src-title">{{ s.title || '未命名文档' }}</div>
+        <div class="src-loc">{{ sourceLocation(s.source_location) }}</div>
       </el-timeline-item>
     </el-timeline>
     <el-empty v-else description="无来源" :image-size="60" />
@@ -34,7 +39,9 @@ defineProps<{
 }
 .src-title {
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
+a.src-title { color: var(--el-color-primary); text-decoration: underline; text-underline-offset: 3px; }
 .src-loc {
   color: #909399;
   font-size: 12px;

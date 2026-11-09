@@ -1,5 +1,6 @@
 """Run DDL in an isolated transaction; never reset an existing application DB."""
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from app.db.migrations import migration_config
 from sqlalchemy.engine import make_url
@@ -27,7 +28,7 @@ def test_upgrade_retains_history_and_is_repeatable(safe_database):
                 command.upgrade(config, 'head')
                 assert 'oa_user' in inspect(connection).get_table_names()
                 assert connection.scalar(text("SELECT user_id FROM agent_thread WHERE id='edfe8dfc-ff0c-4850-b193-7712defadf00'")) == 'historical-user'
-                assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0024'
+                assert connection.scalar(text('SELECT version_num FROM alembic_version')) == ScriptDirectory.from_config(config).get_current_head()
             finally:
                 transaction.rollback()
     finally:

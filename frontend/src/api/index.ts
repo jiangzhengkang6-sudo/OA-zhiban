@@ -4,6 +4,7 @@
  * 聚合所有后端接口调用，返回解包后的 data 字段。
  */
 import client from './client'
+import type { PublishedKnowledge, KnowledgeReading } from '@/types'
 import type {
   ApiResponse,
   AuditEventOut,
@@ -162,6 +163,12 @@ export const policyApi = {
 
 /** 知识库 */
 export const knowledgeApi = {
+  listPublished(): Promise<PublishedKnowledge[]> {
+    return client.get('/admin/knowledge/sources')
+  },
+  readVersion(sourceId: string, versionId: string): Promise<KnowledgeReading> {
+    return client.get(`/admin/knowledge/sources/${encodeURIComponent(sourceId)}/versions/${encodeURIComponent(versionId)}`)
+  },
   list(): Promise<any[]> {
     return client.get('/admin/knowledge')
   },

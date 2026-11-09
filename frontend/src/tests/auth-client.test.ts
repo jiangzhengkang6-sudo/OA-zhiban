@@ -37,3 +37,51 @@ it('退出后到达的业务响应不得写回页面',async () => {
   await ready; clearSession(); finish()
   await expect(pending).rejects.toThrow('会话已变更')
 })
+it('权限范围更新后到达的旧响应不得写回页面', async () => {
+  authState.provider = 'builtin'; authState.user = user; authState.accessToken = 'current'
+  let finish!: () => void
+  let started!: () => void
+  const ready = new Promise<void>(resolve => { started = resolve })
+  const pending = client.get('/documents', { adapter: async config => {
+    started(); await new Promise<void>(resolve => { finish = resolve }); return response(config, 'private')
+  } })
+  await ready
+  authState.authorizationRevision++
+  finish()
+  await expect(pending).rejects.toThrow('权限已变更')
+})
+it('刷新后的业务请求失败不应清除有效登录态', async () => {
+  authState.provider = 'builtin'; authState.user = user; authState.accessToken = 'old'
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, json: async () => ({
+    code: '0', data: url.endsWith('csrf') ? { token: 'csrf' } : { access_token: 'renewed', user },
+  }) })))
+  try {
+    await expect(client.get('/documents', { adapter: async config => fail(config, config.headers.Authorization === 'Bearer old' ? 401 : 500) })).rejects.toThrow()
+    expect(authState.accessToken).toBe('renewed')
+    expect(authState.user?.user_id).toBe(user.user_id)
+  } finally { vi.unstubAllGlobals() }
+})
+it('刷新时权限改变不得重放旧业务请求或退出新会话', async () => {
+  authState.provider = 'builtin'; authState.user = user; authState.accessToken = 'old'
+  const changed = { ...user, permissions: [{ resource: 'meeting', action: 'read', scope: 'self' }] }
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, json: async () => ({
+    code: '0', data: url.endsWith('csrf') ? { token: 'csrf' } : { access_token: 'renewed', user: changed },
+  }) })))
+  const adapter = vi.fn(async (config: InternalAxiosRequestConfig) => fail(config, 401))
+  try {
+    await expect(client.post('/documents', {}, { adapter })).rejects.toThrow('权限已变更')
+    expect(adapter).toHaveBeenCalledOnce()
+    expect(authState.accessToken).toBe('renewed')
+  } finally { vi.unstubAllGlobals() }
+})
+it('刷新后的令牌仍然未授权时退出过期会话', async () => {
+  authState.provider = 'builtin'; authState.user = user; authState.accessToken = 'old'
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, json: async () => ({
+    code: '0', data: url.endsWith('csrf') ? { token: 'csrf' } : { access_token: 'renewed', user },
+  }) })))
+  try {
+    await expect(client.get('/documents', { adapter: async config => fail(config, 401) })).rejects.toThrow()
+    expect(authState.user).toBeNull()
+    expect(authState.accessToken).toBe('')
+  } finally { vi.unstubAllGlobals() }
+})

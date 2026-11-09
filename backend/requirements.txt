@@ -13,6 +13,7 @@ langgraph-checkpoint-postgres>=2.0.0
 langchain-core>=0.2
 deepagents==0.4.11
 httpx>=0.27
+tencentcloud-sdk-python-trtc>=3.0.1500,<4
 python-multipart>=0.0.9
 pypdf>=6.0,<7.0
 Pillow>=12.0,<13.0

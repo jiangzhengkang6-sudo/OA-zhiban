@@ -27,6 +27,19 @@ const query = reactive({
 })
 
 const ACTIONS = [
+  { value: 'public_mail_setup', label: '初始化公共邮箱' },
+  { value: 'public_mail_members_updated', label: '公共邮箱成员授权' },
+  { value: 'public_mail_viewed', label: '查看公共邮件' },
+  { value: 'public_mail_synced', label: '同步公共邮箱' },
+  { value: 'public_mail_draft_saved', label: '保存公共邮件草稿' },
+  { value: 'public_mail_send_started', label: '开始发送公共邮件' },
+  { value: 'public_mail_send_result', label: '公共邮件发送结果' },
+  { value: 'public_mail_claim', label: '认领公共邮件' },
+  { value: 'public_mail_release', label: '释放公共邮件认领' },
+  { value: 'public_mail_complete', label: '完成公共邮件处理' },
+  { value: 'public_mail_reopen', label: '重新打开公共邮件' },
+  { value: 'public_mail_imported', label: '公共邮件录入分析' },
+  { value: 'public_mail_task_draft_created', label: '公共邮件转任务草稿' },
   { value: 'session_created', label: '会话创建' },
   { value: 'intent_routed', label: '意图路由' },
   { value: 'tool_called', label: '工具调用' },
@@ -91,6 +104,14 @@ const ACTIONS = [
   { value: 'leave_attachment_download', label: '请假附件下载' },
   { value: 'leave_attachment_scan', label: '请假附件扫描' },
   { value: 'audit_export_created', label: '审计记录导出' },
+  { value: 'approval.delegation.create', label: '创建审批委托' },
+  { value: 'approval.delegation.revoke', label: '撤销审批委托' },
+  { value: 'organization.user_create', label: '成员入职建号' },
+  { value: 'organization.user_update', label: '更新成员信息' },
+  { value: 'organization.batch_update', label: '批量调整成员' },
+  { value: 'organization.member_change', label: '成员调整' },
+  { value: 'organization.handoff_transfer', label: '成员业务交接' },
+  { value: 'organization.handoff_complete', label: '确认交接完成' },
 ]
 
 const ACTION_LABELS = Object.fromEntries(ACTIONS.map((item) => [item.value, item.label]))

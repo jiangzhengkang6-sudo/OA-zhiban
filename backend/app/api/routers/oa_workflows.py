@@ -15,8 +15,8 @@ async def list_workflows(available: bool = False, scene: str | None = None, db: 
 
 
 @router.get('/options')
-async def options(db: AsyncSession = Depends(get_db), actor=Depends(get_current_user)):
-    return ok(await service.workbench_options(db, actor))
+async def options(resource: str = 'workflow', action: str = 'read', db: AsyncSession = Depends(get_db), actor=Depends(get_current_user)):
+    return ok(await service.workbench_options(db, actor, resource=resource, action=action))
 
 
 @router.post('')

@@ -1,5 +1,11 @@
 # OA 智能体管理系统 MVP
 
+当前验收入口：[全功能测试流程](docs/全功能测试流程.md)（2026-10-23，数据库 0033），包含逐项操作、预期结果、角色与数据准备、已测证据及待测依赖。V2 部门公告、统一待办、审批委托、成员交接和运行告警已实现，本地验证见 [V2 交付说明](docs/v2-department-workbench.md)；真实部门试用及生产部署仍待验收。本轮前端 152 项、隔离浏览器 36 项、实际页面只读 27 项通过，并补测 0033 本地隔离恢复；最新后端全量 1291 项通过的结果沿用同代码版本记录。
+
+本轮另发现正式合同页复核人仍使用演示人员，新建闭环阻塞；旧运维观测、降级控制、客服队列仍需正式身份适配，附件扫描尚未配置。已在新手册记录，不代表全部功能验收通过。
+
+2026-10-22 本人工单邮件/企业微信已确认收件；[公开企业参考资料](fixtures/public-company-knowledge/README.md)已发布 6 份、28 个片段，最终 20 题真实模型检查通过。公开参考不等于本公司制度。材料与多人试用的限制见 [真实业务与试用验收](docs/real-business-acceptance.md)，不将个人收件或自动化结果等同于部门签收。
+
 部门 OA 正式化（更新：2026-10-22）：[PRD V1.5](OA智能体管理系统-正式PRD-V1.5.md)、[实施计划](docs/部门OA正式化实施计划-V1.1.md)、[M1 验收与启动说明](docs/m1-identity-acceptance.md)、[M2 验收与启动说明](docs/m2-manual-oa-acceptance.md)。M1/M2/M3 和 [M4 本机隔离范围](changes/m4-resilience/reviews/m4-verification.md)已完成验证，生产部署尚未验收。当前使用[本地正式账号及内置 OA](docs/formal-oa-local-setup.md)，模型和通知的最新状态见[真实服务联调记录](docs/live-service-verification.md)；前端依赖安全升级见[工具链验证](docs/frontend-toolchain-verification.md)。以下独立预览记录属于历史阶段。
 
 M3 [开发契约已获批准](changes/department-oa-business/execution-contract.md)，包括报销、正式工单、站内/SMTP、13 项核心桥接及 AI/P2/P3 正式权限；[验收报告](changes/department-oa-business/reviews/verification.md)和[继续入口](changes/department-oa-business/planning-status.md)。B1-B7 的批准本地范围已完成实施者串行验证，未宣称生产上线。
@@ -76,14 +82,23 @@ python -m pytest tests/unit -q    # 单元测试
 API/图/迁移测试会写入或清理测试数据，必须在**单独数据库**运行：
 
 ```powershell
-docker exec oa-agent-db createdb -U oa oa_agent_test  # 仅首次创建
+docker exec oa-agent-db createdb -U oa oa_business_m3_test  # 仅首次创建独立测试库
 cd backend
 $env:ALLOW_TEST_DATABASE_RESET = 'true'
+$env:DATABASE_URL = 'postgresql+asyncpg://oa:oa@localhost:5433/oa_business_m3_test'
+$env:DATABASE_SYNC_URL = 'postgresql+psycopg://oa:oa@localhost:5433/oa_business_m3_test'
+$env:CHECKPOINTER_URL = 'postgresql://oa:oa@localhost:5433/oa_business_m3_test'
 python -m pytest tests/migrations tests/api tests/graph -q
-Remove-Item Env:ALLOW_TEST_DATABASE_RESET
+Remove-Item Env:ALLOW_TEST_DATABASE_RESET, Env:DATABASE_URL, Env:DATABASE_SYNC_URL, Env:CHECKPOINTER_URL
 ```
 
 测试夹具在执行任何清表前检查环境为 `test`、三个连接目标一致且数据库名以 `_test` 结尾。默认命令不会连接或清空开发数据库；勿将 `ALLOW_TEST_DATABASE_RESET=true` 写入生产配置。
+
+当前本机的 `oa_agent_test` 虽然名称以 `_test` 结尾，实际保存正式账号及业务数据，禁止用于重置型测试。上例采用独立 `oa_business_m3_test`；连接端口以本机 Docker 映射为准。
+
+2026-10-23 已交付 V2 首批部门公告和统一待办，功能范围、单人验收及恢复演练结果见 [V2 交付说明](docs/v2-department-workbench.md)。真实成员试用及后续 V2 功能仍按说明跟进。
+
+同日已补齐审批委托、成员批量维护/交接，以及 F-164 运行告警本地核心功能。管理员入口 `/organization/alerts`，独立巡检、告警开关和备份回执接入见 [运行告警运维说明](docs/operations-alerts.md)；真实通知时效及生产运行验收仍待完成。
 
 ## 关键设计
 

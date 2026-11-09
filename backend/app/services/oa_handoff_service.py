@@ -5,7 +5,7 @@ from sqlalchemy import select
 from ..models.identity import OAUser,OAMembership
 from ..models.oa_workflow import OAWorkflowInstance,OAWorkflowNode,OAWorkflowSeat
 from .oa_access_service import (builtin_actor,authorize_oa,OAAccessTarget,tenant_row,user_department,
-    invalid,revision_conflict,denied)
+    invalid,revision_conflict,denied,management_departments)
 from .oa_command_service import OACommand,CommandOutcome,run_command
 from .oa_workflow_subject import resolve_subject
 from . import oa_approval_service as approvals,oa_leave_service as leaves,oa_workflow_service as workflows
@@ -138,15 +138,14 @@ async def resume(db,actor,instance_id,payload):
 
 async def list_instances(db,actor):
     actor=await builtin_actor(db,actor)
-    department=actor.depts[0] if actor.depts else None
-    await authorize_oa(db,actor,'workflow_admin','read',target=OAAccessTarget(actor.tenant_id,department_id=department))
+    departments=await management_departments(db,actor,'workflow_admin','read')
     instances=(await db.scalars(select(OAWorkflowInstance).where(OAWorkflowInstance.tenant_id==actor.tenant_id)
         .order_by(OAWorkflowInstance.created_at.desc()))).all()
     result=[]
     for instance in instances:
         subject=await resolve_subject(db,actor,instance)
         leave,version=subject.row,subject.version
-        if leave.submission_version!=version.version or await user_department(db,actor.tenant_id,leave.applicant_id)!=department: continue
+        if leave.submission_version!=version.version or await user_department(db,actor.tenant_id,leave.applicant_id) not in departments: continue
         await admin_target(db,actor,leave,'read')
         nodes=(await db.scalars(select(OAWorkflowNode).where(OAWorkflowNode.tenant_id==actor.tenant_id,
             OAWorkflowNode.instance_id==instance.id).order_by(OAWorkflowNode.ordinal))).all()
