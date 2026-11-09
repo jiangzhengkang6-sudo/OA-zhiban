@@ -4,6 +4,8 @@ data/verification/
 .env
 backend/.env
 output/formal-oa-private/
+# 本机全功能测试手册含人员与环境信息，仅限项目负责人本机保存。
+/docs/全功能测试流程.md
 
 # Private configuration and credentials (sanitized examples remain tracked).
 .env.*
