@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * OA 智能体系统 MVP - 智能助手页面。
+ * OA 智能体系统 - 智能助手页面。
  *
  * 承载对话区、来源卡片、任务状态、转人工与工单确认等核心交互。
  */
@@ -16,10 +16,12 @@ import SourceCard from '@/components/SourceCard.vue'
 import PrecheckTable from '@/components/PrecheckTable.vue'
 import { authState } from '@/stores/auth'
 import { messageOf, oaLabel } from '@/utils/oa'
+import AssistantV2Panel from '@/components/AssistantV2Panel.vue'
 
 const assistant = useAssistantStore()
 const route = useRoute()
 const router = useRouter()
+const activePanel = ref('v2')
 const recovering = ref(false), recoveryError = ref('')
 const scene = ref(route.path === '/leave' ? 'leave' : assistant.scene)
 const businessId = ref(assistant.businessId)
@@ -268,6 +270,11 @@ watch(() => route.params.threadId || route.query.threadId, recover, { immediate:
 
 <template>
   <el-card shadow="never" class="assistant">
+    <el-tabs v-model="activePanel" class="assistant-tabs">
+      <el-tab-pane label="统一助手" name="v2">
+        <AssistantV2Panel />
+      </el-tab-pane>
+      <el-tab-pane label="专项助手" name="special">
     <!-- 顶部：场景与会话控制 -->
     <div class="toolbar">
       <el-button type="primary" @click="router.push(authState.provider === 'builtin' ? '/oa/leaves/new' : '/leaves/new')">填写请假申请</el-button>
@@ -448,6 +455,8 @@ watch(() => route.params.threadId || route.query.threadId, recover, { immediate:
         <el-button type="primary" :disabled="ticketBusy || !ticketEdit.summary.trim()" @click="saveTicketDraft">保存修改</el-button>
       </template>
     </el-dialog>
+      </el-tab-pane>
+    </el-tabs>
   </el-card>
 </template>
 

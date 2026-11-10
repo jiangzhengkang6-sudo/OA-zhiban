@@ -2,7 +2,7 @@
 OA 智能体管理系统 - 应用配置模块。
 
 使用 pydantic-settings 读取环境变量（.env），集中管理数据库连接、模型提供方、OA 提供方、
-开关阈值等运行参数。所有配置项均有默认值，保证 MVP 可开箱即用（Mock + Docker PG）。
+开关阈值等运行参数，支持部门级 OA 的本地部署与持续迭代。
 """
 
 from functools import lru_cache
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     )
 
     # ---- 服务 ----
-    app_name: str = "OA 智能体管理系统 MVP"
+    app_name: str = "OA 智能体管理系统"
     api_prefix: str = "/api"
     environment: str = "development"
     ai_enabled: bool = True

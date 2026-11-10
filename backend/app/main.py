@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 
 from .api.routers import (
     auth,
+    assistant_v2,
     organization,
     oa_workflows,
     oa_leaves,
@@ -195,6 +196,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 # 路由挂载
 app.include_router(auth.router, prefix=_settings.api_prefix)
+app.include_router(assistant_v2.router, prefix=_settings.api_prefix)
 app.include_router(organization.router, prefix=_settings.api_prefix)
 app.include_router(oa_workflows.router, prefix=_settings.api_prefix)
 app.include_router(oa_leaves.router, prefix=_settings.api_prefix)
