@@ -1,0 +1,23 @@
+{
+  "dataset_id": "department-standard-templates-20261110",
+  "dataset_name": "部门业务标准模板资料包",
+  "reviewed_on": "2026-11-10",
+  "status": "standard_template_trial",
+  "documents": [
+    {"id": "employee_handbook", "title": "标准模板｜员工手册与办公总则", "file": "documents/employee-handbook.md", "template_no": "OA-TPL-HR-001", "owner_department": "人力资源部"},
+    {"id": "attendance_leave", "title": "标准模板｜考勤与请假管理", "file": "documents/attendance-leave.md", "template_no": "OA-TPL-HR-002", "owner_department": "人力资源部"},
+    {"id": "overtime_comp_leave", "title": "标准模板｜加班与调休管理", "file": "documents/overtime-compensatory-leave.md", "template_no": "OA-TPL-HR-003", "owner_department": "人力资源部"},
+    {"id": "expense_policy", "title": "标准模板｜费用报销管理", "file": "documents/expense-policy.md", "template_no": "OA-TPL-FIN-001", "owner_department": "财务部"},
+    {"id": "travel_policy", "title": "标准模板｜差旅管理", "file": "documents/travel-policy.md", "template_no": "OA-TPL-FIN-002", "owner_department": "财务部"},
+    {"id": "meeting_policy", "title": "标准模板｜会议管理", "file": "documents/meeting-policy.md", "template_no": "OA-TPL-COLLAB-001", "owner_department": "综合管理部"},
+    {"id": "video_meeting_guide", "title": "标准模板｜腾讯视频会议使用", "file": "documents/video-meeting-guide.md", "template_no": "OA-TPL-COLLAB-002", "owner_department": "综合管理部"},
+    {"id": "announcement_policy", "title": "标准模板｜公告发布管理", "file": "documents/announcement-policy.md", "template_no": "OA-TPL-COLLAB-003", "owner_department": "综合管理部"},
+    {"id": "public_mailbox_guide", "title": "标准模板｜公共邮箱使用", "file": "documents/public-mailbox-guide.md", "template_no": "OA-TPL-COLLAB-004", "owner_department": "综合管理部"},
+    {"id": "knowledge_base_guide", "title": "标准模板｜知识库内容维护", "file": "documents/knowledge-base-guide.md", "template_no": "OA-TPL-AI-001", "owner_department": "系统管理部"},
+    {"id": "work_task_policy", "title": "标准模板｜业务任务与待办管理", "file": "documents/work-task-policy.md", "template_no": "OA-TPL-COLLAB-005", "owner_department": "综合管理部"},
+    {"id": "contract_review_process", "title": "标准模板｜合同审查与用印", "file": "documents/contract-review-process.md", "template_no": "OA-TPL-LEGAL-001", "owner_department": "法务部"},
+    {"id": "information_security_access", "title": "标准模板｜信息安全与系统权限", "file": "documents/information-security-access.md", "template_no": "OA-TPL-IT-001", "owner_department": "系统管理部"},
+    {"id": "employee_lifecycle_handoff", "title": "标准模板｜入转调离交接", "file": "documents/employee-lifecycle-handoff.md", "template_no": "OA-TPL-HR-004", "owner_department": "人力资源部"},
+    {"id": "it_support_ticket_process", "title": "标准模板｜IT 工单与技术支持", "file": "documents/it-support-ticket-process.md", "template_no": "OA-TPL-IT-002", "owner_department": "系统管理部"}
+  ]
+}

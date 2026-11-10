@@ -1,0 +1,17 @@
+[
+  {"id": "q01", "question": "员工日常办公需要遵守哪些基本原则？", "documents": ["employee_handbook"]},
+  {"id": "q02", "question": "请假申请应该怎么办理？", "documents": ["attendance_leave"]},
+  {"id": "q03", "question": "加班后如何申请调休？", "documents": ["overtime_comp_leave"]},
+  {"id": "q04", "question": "费用报销需要准备哪些材料？", "documents": ["expense_policy"]},
+  {"id": "q05", "question": "出差前要完成哪些审批和准备？", "documents": ["travel_policy"]},
+  {"id": "q06", "question": "组织一场会议需要注意什么？", "documents": ["meeting_policy"]},
+  {"id": "q07", "question": "使用腾讯视频会议前后要做哪些检查？", "documents": ["video_meeting_guide"]},
+  {"id": "q08", "question": "发布部门公告的流程是什么？", "documents": ["announcement_policy"]},
+  {"id": "q09", "question": "公共邮箱中的邮件应该如何认领和处理？", "documents": ["public_mailbox_guide"]},
+  {"id": "q10", "question": "知识库资料应该如何创建、审核和维护？", "documents": ["knowledge_base_guide"]},
+  {"id": "q11", "question": "业务任务的创建、分配和完成有什么要求？", "documents": ["work_task_policy"]},
+  {"id": "q12", "question": "合同审查和用印前要完成哪些步骤？", "documents": ["contract_review_process"]},
+  {"id": "q13", "question": "员工如何申请系统权限？", "documents": ["information_security_access"]},
+  {"id": "q14", "question": "员工离职或调岗时如何交接工作？", "documents": ["employee_lifecycle_handoff"]},
+  {"id": "q15", "question": "遇到电脑或系统故障如何提交 IT 工单？", "documents": ["it_support_ticket_process"]}
+]
