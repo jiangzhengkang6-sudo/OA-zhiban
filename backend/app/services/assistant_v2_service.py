@@ -22,10 +22,14 @@ from ..models.work_task_batch import WorkTaskBatch
 from ..models.work_task_event import WorkTaskEvent
 from ..schemas.command import CommandEnvelope
 from ..schemas.oa_meeting import MeetingCommand, MeetingCreate, MeetingFields
+from ..schemas.work_task import WorkTaskCommand
 from ..core.enums import ErrorCode
 from ..core.errors import AppException
 from ..schemas.assistant_v2 import (
     AssistantDraftResponse,
+    AssistantExistingItem,
+    AssistantMeetingActionPayload,
+    AssistantTaskActionPayload,
     AssistantTaskPayload,
     AssistantCard,
     AssistantSection,
@@ -62,7 +66,7 @@ TASK_STATUS_LABELS = {
     "ARCHIVED": "已归档",
 }
 PRIORITY_LABELS = {"low": "低", "normal": "普通", "high": "高"}
-SAFETY_NOTICE = "助手仅汇总、检索和起草，不会自动审批、发送邮件、取消会议或通知全员；正式提交前会再次校验权限。"
+SAFETY_NOTICE = "助手仅汇总、检索和起草；高影响操作必须保存草稿、复核确认并再次校验权限，不会自动审批或通知全员。"
 
 
 def _anchor_date(value: str | None = None) -> date:
@@ -86,6 +90,17 @@ def _week_bounds(anchor: date) -> tuple[datetime, datetime]:
     week_start_date = anchor - timedelta(days=anchor.weekday())
     start = datetime.combine(week_start_date, time.min, SHANGHAI_TZ)
     return start, start + timedelta(days=7)
+
+
+def _month_bounds(anchor: date) -> tuple[datetime, datetime]:
+    """返回 anchor 所在自然月的起止时间。"""
+
+    start = datetime(anchor.year, anchor.month, 1, tzinfo=SHANGHAI_TZ)
+    if anchor.month == 12:
+        next_month = datetime(anchor.year + 1, 1, 1, tzinfo=SHANGHAI_TZ)
+    else:
+        next_month = datetime(anchor.year, anchor.month + 1, 1, tzinfo=SHANGHAI_TZ)
+    return start, next_month
 
 
 def _has_permission(actor, resource: str, action: str) -> bool:
@@ -282,7 +297,13 @@ async def create_report_draft(session, actor, payload: ReportDraftRequest) -> Re
 
     actor = await require_fresh_identity(actor, session=session)
     anchor = _anchor_date(payload.date)
-    period_start, period_end = (_day_bounds(anchor) if payload.report_type == "daily" else _week_bounds(anchor))
+    period_start, period_end = (
+        _day_bounds(anchor)
+        if payload.report_type == "daily"
+        else _week_bounds(anchor)
+        if payload.report_type == "weekly"
+        else _month_bounds(anchor)
+    )
     warnings: list[str] = []
     tasks: list[Any] = []
     meetings: list[dict[str, Any]] = []
@@ -326,9 +347,12 @@ async def create_report_draft(session, actor, payload: ReportDraftRequest) -> Re
     if payload.report_type == "daily":
         title = f"{_display_date(period_start)}工作日报"
         next_title = "明日计划"
-    else:
+    elif payload.report_type == "weekly":
         title = f"{_display_date(period_start)}至{_display_date(period_end - timedelta(days=1))}工作周报"
         next_title = "下周计划"
+    else:
+        title = f"{period_start.year}年{period_start.month}月工作月报"
+        next_title = "下月计划"
 
     def task_lines(rows: list[Any], empty_text: str) -> list[str]:
         if not rows:
@@ -397,7 +421,28 @@ class _NaturalDraftParser:
 
     def parse(self, text: str, draft_type: str) -> dict[str, Any]:
         normalized = re.sub(r"\s+", " ", text.strip())
+        operation = self._detect_operation(normalized)
         detected_type = self._detect_type(normalized, draft_type)
+        if operation == "complete_task" or operation == "cancel_task":
+            return {
+                "draft_type": "task",
+                "draft": {
+                    "operation": "complete" if operation == "complete_task" else "cancel",
+                    "task_id": self._extract_task_id(normalized),
+                    "expected_version": 0,
+                    "comment": normalized[:2000],
+                },
+            }
+        if operation == "cancel_meeting":
+            return {
+                "draft_type": "meeting",
+                "draft": {
+                    "operation": "cancel",
+                    "meeting_id": "",
+                    "expected_revision": 0,
+                    "reason": f"统一助手申请取消：{self._meeting_title(normalized)}"[:1000],
+                },
+            }
         self.day_value = self._extract_day(normalized)
         start_at = self._extract_start_time(normalized)
         location, online_url, video_enabled = self._extract_location(normalized)
@@ -451,6 +496,27 @@ class _NaturalDraftParser:
                 "sensitive": False,
             }
         return {"draft_type": detected_type, "draft": draft}
+
+    def _detect_operation(self, text: str) -> str:
+        if re.search(r"取消", text) and re.search(r"会议|开会|评审|沟通会|研讨会|复盘会|例会", text):
+            return "cancel_meeting"
+        if re.search(r"WT-[A-Z0-9]+", text):
+            if re.search(r"完成|办结|做完", text):
+                return "complete_task"
+            if re.search(r"取消", text):
+                return "cancel_task"
+        if re.search(r"完成|办结|做完", text) and re.search(r"任务|待办", text):
+            return "complete_task"
+        if re.search(r"取消", text) and re.search(r"任务|待办", text):
+            return "cancel_task"
+        return "create"
+
+    def _extract_task_id(self, text: str) -> str:
+        match = re.search(r"WT-[A-Z0-9]+", text)
+        if match:
+            self.spans.append(match.span())
+            return match.group(0)
+        return ""
 
     def _detect_type(self, text: str, draft_type: str) -> str:
         if draft_type != "auto":
@@ -691,7 +757,31 @@ async def parse_natural_draft(session, actor, payload) -> DraftParseResponse:
     draft = parsed["draft"]
     missing_required: list[str] = []
 
-    if draft_type == "meeting":
+    if draft.get("operation") in {"complete", "cancel"} and draft.get("task_id"):
+        try:
+            current = await work_task_service.get_task(
+                session, actor, draft["task_id"]
+            )
+        except AppException:
+            current = None
+        if current and draft["operation"] in current.available_actions:
+            draft["expected_version"] = current.version
+        else:
+            parser.warnings.append("目标任务当前状态不支持该操作，请重新选择。")
+
+    if draft.get("operation") in {"complete", "cancel"} and draft_type == "task":
+        require_permission(actor, "work_task", "read")
+        if not _has_permission(actor, "work_task", "write"):
+            parser.warnings.append("当前账号没有业务任务写入权限，不能执行该任务操作。")
+        if not draft.get("task_id"):
+            missing_required.append("目标任务")
+    elif draft.get("operation") == "cancel" and draft_type == "meeting":
+        require_permission(actor, "meeting", "read")
+        if not _has_permission(actor, "meeting", "write"):
+            parser.warnings.append("当前账号没有会议写入权限，不能取消会议。")
+        if not draft.get("meeting_id"):
+            missing_required.append("目标会议")
+    elif draft_type == "meeting":
         require_permission(actor, "meeting", "read")
         if not _has_permission(actor, "meeting", "write"):
             parser.warnings.append("当前账号没有会议安排写入权限，草稿暂不能直接创建为正式会议。")
@@ -721,7 +811,7 @@ async def parse_natural_draft(session, actor, payload) -> DraftParseResponse:
         draft=draft,
         missing_required=missing_required,
         warnings=parser.warnings,
-        confirmation_notice="当前结果只是草稿；后续创建或安排前，系统会再次校验人员权限、租户隔离、冲突与幂等状态。",
+        confirmation_notice="当前结果只是草稿；确认执行前，系统会再次校验事项状态、人员权限、租户隔离、冲突与幂等状态。",
     )
 
 
@@ -760,6 +850,44 @@ async def options(session, actor, draft_type: str) -> dict[str, Any]:
     return {"users": users}
 
 
+async def list_existing_items(session, actor, draft_type: str) -> list[AssistantExistingItem]:
+    """列出当前账号可通过助手操作的已有任务或会议。"""
+
+    actor = await require_fresh_identity(actor, session=session)
+    if draft_type == "task":
+        page = await work_task_service.list_tasks(session, actor, page=1, page_size=100)
+        return [
+            AssistantExistingItem(
+                id=item.task_id,
+                title=item.title,
+                status=item.status,
+                version=item.version,
+                time=item.due_at,
+                available_actions=[
+                    action for action in item.available_actions if action in {"complete", "cancel"}
+                ],
+            )
+            for item in page.items
+            if any(action in {"complete", "cancel"} for action in item.available_actions)
+        ]
+
+    rows = await meeting_management_service.list_items(session, actor)
+    return [
+        AssistantExistingItem(
+            id=row["id"],
+            title=row["title"],
+            status=row["state"],
+            version=row["revision"],
+            time=datetime.fromisoformat(row["starts_at"]),
+            available_actions=[
+                action for action in row["available_actions"] if action == "cancel"
+            ],
+        )
+        for row in rows
+        if "cancel" in row["available_actions"]
+    ]
+
+
 async def _validate_formal_identity(actor) -> Any:
     """确认第二阶段写入能力只对正式身份账号开放。"""
 
@@ -794,6 +922,28 @@ async def _validate_saved_payload(
     warnings: list[str] = []
     if draft_type == "task":
         require_permission(actor, "work_task", "write")
+        if raw.get("operation", "create") != "create":
+            payload = AssistantTaskActionPayload.model_validate(raw)
+            if payload.expected_version < 1:
+                raise AppException(
+                    ErrorCode.BAD_REQUEST,
+                    "请选择目标任务并锁定当前版本。",
+                    http_status=422,
+                )
+            current = await work_task_service.get_task(session, actor, payload.task_id)
+            if current.version != payload.expected_version:
+                raise AppException(
+                    ErrorCode.IDEMPOTENCY_CONFLICT,
+                    "任务版本已变化，请刷新后重新生成草稿。",
+                    http_status=409,
+                )
+            if payload.operation not in current.available_actions:
+                raise AppException(
+                    ErrorCode.FORBIDDEN,
+                    "当前身份或任务状态不可执行此操作。",
+                    http_status=403,
+                )
+            return payload, warnings
         payload = AssistantTaskPayload.model_validate(raw)
         from ..providers.identity import IdentityResolver
 
@@ -812,6 +962,30 @@ async def _validate_saved_payload(
         return payload, warnings
 
     require_permission(actor, "meeting", "write")
+    if raw.get("operation") == "cancel":
+        payload = AssistantMeetingActionPayload.model_validate(raw)
+        if payload.expected_revision < 1:
+            raise AppException(
+                ErrorCode.BAD_REQUEST,
+                "请选择目标会议并锁定当前版本。",
+                http_status=422,
+            )
+        current = await meeting_management_service.detail(
+            session, actor, payload.meeting_id
+        )
+        if current["revision"] != payload.expected_revision:
+            raise AppException(
+                ErrorCode.IDEMPOTENCY_CONFLICT,
+                "会议版本已变化，请刷新后重新生成草稿。",
+                http_status=409,
+            )
+        if "cancel" not in current["available_actions"]:
+            raise AppException(
+                ErrorCode.FORBIDDEN,
+                "当前身份或会议状态不可取消。",
+                http_status=403,
+            )
+        return payload, warnings
     payload = MeetingFields.model_validate(raw)
     await meeting_management_service.members(session, actor, payload)
     return payload, warnings
@@ -1030,6 +1204,82 @@ async def _confirm_meeting_draft(
     )
 
 
+async def _confirm_task_action_draft(
+    session,
+    actor,
+    draft: AssistantDraft,
+) -> None:
+    """确认后对已有任务执行完成或取消操作。"""
+
+    payload = AssistantTaskActionPayload.model_validate(draft.payload)
+    idempotency_key = str(
+        uuid5(
+            NAMESPACE_URL,
+            f"{actor.tenant_id}:{draft.id}:task-{payload.operation}",
+        )
+    )
+    result = await work_task_service.task_command(
+        session,
+        actor,
+        payload.task_id,
+        WorkTaskCommand(
+            idempotency_key=idempotency_key,
+            expected_version=payload.expected_version,
+            action=payload.operation,
+            comment=payload.comment,
+        ),
+    )
+    draft.result = {
+        "task_id": payload.task_id,
+        "state": result.status,
+    }
+    await audit_service.audit(
+        session,
+        f"assistant_task_{payload.operation}",
+        actor_id=actor.user_id,
+        target_type="work_task",
+        target_id=payload.task_id,
+    )
+
+
+async def _confirm_meeting_action_draft(
+    session,
+    actor,
+    draft: AssistantDraft,
+) -> None:
+    """确认后取消已有会议。"""
+
+    payload = AssistantMeetingActionPayload.model_validate(draft.payload)
+    operation_id = str(
+        uuid5(
+            NAMESPACE_URL,
+            f"{actor.tenant_id}:{draft.id}:meeting-cancel",
+        )
+    )
+    await meeting_management_service.transition(
+        session,
+        actor,
+        payload.meeting_id,
+        MeetingCommand(
+            operation_id=operation_id,
+            expected_revision=payload.expected_revision,
+            reason=payload.reason,
+        ),
+        "cancel",
+    )
+    draft.result = {
+        "meeting_id": payload.meeting_id,
+        "state": "CANCELLED",
+    }
+    await audit_service.audit(
+        session,
+        "assistant_meeting_cancelled",
+        actor_id=actor.user_id,
+        target_type="oa_meeting",
+        target_id=payload.meeting_id,
+    )
+
+
 async def confirm_draft(
     session,
     actor,
@@ -1064,7 +1314,7 @@ async def confirm_draft(
             http_status=422,
         )
 
-    # 再次执行强类型校验，防止保存后人员、权限或时间状态发生变化。
+    # 再次执行强类型校验，防止保存后人员、权限、事项或时间状态发生变化。
     await _validate_saved_payload(session, actor, draft.draft_type, draft.payload)
     envelope = CommandEnvelope(
         command_id=uuid4(),
@@ -1083,7 +1333,14 @@ async def confirm_draft(
     )
     command, fresh = await idempotency_service.claim(session, envelope)
     if fresh:
-        if draft.draft_type == "task":
+        if (
+            draft.draft_type == "task"
+            and draft.payload.get("operation", "create") != "create"
+        ):
+            await _confirm_task_action_draft(session, actor, draft)
+        elif draft.draft_type == "meeting" and draft.payload.get("operation") == "cancel":
+            await _confirm_meeting_action_draft(session, actor, draft)
+        elif draft.draft_type == "task":
             await _confirm_task_draft(session, actor, draft, payload)
         else:
             await _confirm_meeting_draft(session, actor, draft)

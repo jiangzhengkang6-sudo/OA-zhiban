@@ -53,6 +53,17 @@ async def _available(session, actor, record=None):
 async def load_source(session, actor, source_type, source_id, source_version=None):
     """Only authoritative local sources; source text cannot expand authority."""
     actor = await _identity(session, actor)
+    if source_type == "assistant":
+        batch = await session.scalar(
+            select(WorkTaskBatch).where(
+                WorkTaskBatch.tenant_id == actor.tenant_id,
+                WorkTaskBatch.source_type == "assistant",
+                WorkTaskBatch.source_id == source_id,
+            )
+        )
+        if batch is None or batch.owner_id != actor.user_id:
+            _deny("无权访问该助手来源")
+        return batch.source_snapshot
     if source_type == 'email':
         from .public_mail_service import task_source
         return await task_source(session, actor, source_id)

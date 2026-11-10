@@ -11,6 +11,7 @@ vi.mock('@/api/assistantV2', () => ({
     createReportDraft: vi.fn(),
     parseDraft: vi.fn(),
     peopleOptions: vi.fn(),
+    existingItems: vi.fn(),
     saveDraft: vi.fn(),
     listDrafts: vi.fn(),
     getDraft: vi.fn(),
@@ -59,6 +60,7 @@ beforeEach(() => {
       { id: 'u_zhang', display_name: '张三' },
     ],
   })
+  vi.mocked(assistantV2Api.existingItems).mockResolvedValue([])
 })
 
 async function render() {
@@ -184,6 +186,85 @@ describe('统一智能助手 V2 面板', () => {
       }),
     )
     expect(wrapper.text()).toContain('查看业务任务：WT-123')
+  }, 15000)
+
+  it('完成已有任务前先选择事项并复核确认', async () => {
+    vi.mocked(assistantV2Api.parseDraft).mockResolvedValue({
+      draft_type: 'task',
+      confidence: 'medium',
+      draft: {
+        operation: 'complete',
+        task_id: '',
+        expected_version: 0,
+        comment: '请完成任务',
+      },
+      missing_required: ['目标任务'],
+      warnings: [],
+      confirmation_notice: '当前结果只是草稿。',
+    } as any)
+    vi.mocked(assistantV2Api.existingItems).mockResolvedValue([
+      {
+        id: 'WT-456',
+        title: '核对合同',
+        status: 'IN_PROGRESS',
+        version: 2,
+        available_actions: ['complete'],
+      },
+    ])
+    vi.mocked(assistantV2Api.saveDraft).mockResolvedValue({
+      id: 'draft-2',
+      draft_type: 'task',
+      status: 'DRAFT',
+      payload: {
+        operation: 'complete',
+        task_id: 'WT-456',
+        expected_version: 2,
+      },
+      missing_required: [],
+      warnings: [],
+      result: {},
+      notes: '',
+      created_at: '2026-11-10T10:00:00+08:00',
+      updated_at: '2026-11-10T10:00:00+08:00',
+    } as any)
+    vi.mocked(assistantV2Api.confirmDraft).mockResolvedValue({
+      id: 'draft-2',
+      draft_type: 'task',
+      status: 'CONFIRMED',
+      payload: {},
+      missing_required: [],
+      warnings: [],
+      result: { task_id: 'WT-456', state: 'COMPLETED' },
+      notes: '',
+      created_at: '2026-11-10T10:00:00+08:00',
+      updated_at: '2026-11-10T10:00:00+08:00',
+    } as any)
+
+    const wrapper = await render()
+    await wrapper.get('textarea').setValue('把核对合同任务完成')
+    const parseButton = wrapper.findAll('button').find(item => item.text().includes('生成结构化草稿'))!
+    await parseButton.trigger('click')
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectExistingItem({
+      id: 'WT-456',
+      title: '核对合同',
+      status: 'IN_PROGRESS',
+      version: 2,
+      available_actions: ['complete'],
+    })
+
+    const saveButton = wrapper.findAll('button').find(item => item.text().includes('保存可确认草稿'))!
+    expect((wrapper.vm as any).parsedDraftReady).toBe(true)
+    await (wrapper.vm as any).saveParsedDraft()
+    await flushPromises()
+
+    await wrapper.get('.confirm-form input[type="checkbox"]').setValue(true)
+    const confirmButton = wrapper.findAll('button').find(item => item.text().includes('确认并写入'))!
+    await confirmButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('查看业务任务：WT-456')
   }, 15000)
 })
 

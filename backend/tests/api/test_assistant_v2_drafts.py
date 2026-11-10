@@ -15,6 +15,10 @@ from app.schemas.assistant_v2 import (
     DraftConfirmRequest,
     DraftSaveRequest,
 )
+from app.schemas.assistant_v2 import ReportDraftRequest
+from app.schemas.oa_meeting import MeetingCommand, MeetingCreate
+from app.schemas.work_task import WorkTaskCommand
+from app.services import meeting_management_service, work_task_service
 from app.services import assistant_v2_service as service
 from app.services.identity_service import utcnow
 from tests.oa_support import oa_db, seed
@@ -229,3 +233,144 @@ async def test_task_options_return_only_users_with_task_access(oa_db):
             owner.user_id,
             eligible.user_id,
         }
+
+
+async def test_monthly_report_draft(oa_db):
+    async with oa_db() as db:
+        owner = await seed(db, resources=["work_task", "meeting"], scope="self")
+        await db.commit()
+
+        result = await service.create_report_draft(
+            db,
+            owner,
+            ReportDraftRequest(report_type="monthly", date="2026-11-10"),
+        )
+        assert result.report_type == "monthly"
+        assert result.title == "2026年11月工作月报"
+        assert result.period_start.year == 2026
+        assert result.period_start.month == 11
+        assert result.markdown.startswith("# 2026年11月工作月报")
+
+
+async def test_task_complete_action_draft(oa_db):
+    async with oa_db() as db:
+        owner = await seed(db, resources=["work_task"], scope="self")
+        await db.commit()
+
+        created_draft = await service.save_draft(
+            db, owner, task_draft(owner.user_id)
+        )
+        await db.commit()
+        created = await service.confirm_draft(
+            db, owner, created_draft.id, confirm_request()
+        )
+        await db.commit()
+        task_id = created.result["task_id"]
+        task = await work_task_service.get_task(db, owner, task_id)
+        started = await work_task_service.task_command(
+            db,
+            owner,
+            task_id,
+            WorkTaskCommand(
+                idempotency_key=uuid4().hex,
+                expected_version=task.version,
+                action="start",
+            ),
+        )
+        await db.commit()
+
+        action_draft = await service.save_draft(
+            db,
+            owner,
+            DraftSaveRequest(
+                draft_type="task",
+                draft={
+                    "operation": "complete",
+                    "task_id": task_id,
+                    "expected_version": started.version,
+                    "comment": "已完成核对",
+                },
+            ),
+        )
+        await db.commit()
+        confirmed = await service.confirm_draft(
+            db, owner, action_draft.id, confirm_request()
+        )
+        await db.commit()
+        assert confirmed.result == {
+            "task_id": task_id,
+            "state": "COMPLETED",
+        }
+        completed = await work_task_service.get_task(db, owner, task_id)
+        assert completed.status == "COMPLETED"
+        assert completed.progress == 100
+
+
+async def test_meeting_cancel_action_draft(oa_db):
+    async with oa_db() as db:
+        owner = await seed(
+            db,
+            resources=["meeting", "notification"],
+            scope="self",
+        )
+        attendee = await seed(
+            db,
+            tenant=owner.tenant_id,
+            resources=["meeting", "notification"],
+            scope="self",
+        )
+        await db.commit()
+
+        starts_at = utcnow() + timedelta(days=1)
+        saved_meeting = await meeting_management_service.save(
+            db,
+            owner,
+            MeetingCreate(
+                operation_id=uuid4().hex,
+                title="项目复盘会",
+                agenda="复盘风险",
+                starts_at=starts_at,
+                ends_at=starts_at + timedelta(hours=1),
+                host_id=owner.user_id,
+                recorder_id=owner.user_id,
+                attendee_ids=[attendee.user_id],
+                location="第一会议室",
+            ),
+        )
+        meeting_id = saved_meeting.result["id"]
+        revision = saved_meeting.result["revision"]
+        await meeting_management_service.transition(
+            db,
+            owner,
+            meeting_id,
+            MeetingCommand(
+                operation_id=uuid4().hex,
+                expected_revision=revision,
+            ),
+            "publish",
+        )
+        await db.commit()
+
+        action_draft = await service.save_draft(
+            db,
+            owner,
+            DraftSaveRequest(
+                draft_type="meeting",
+                draft={
+                    "operation": "cancel",
+                    "meeting_id": meeting_id,
+                    "expected_revision": revision + 1,
+                    "reason": "会议时间冲突",
+                },
+            ),
+        )
+        await db.commit()
+        confirmed = await service.confirm_draft(
+            db, owner, action_draft.id, confirm_request()
+        )
+        await db.commit()
+        assert confirmed.result == {
+            "meeting_id": meeting_id,
+            "state": "CANCELLED",
+        }
+        assert (await db.get(OAMeeting, meeting_id)).state == "CANCELLED"

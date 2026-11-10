@@ -11,6 +11,7 @@ import { ElMessage } from 'element-plus'
 import { Refresh, Search, Document, MagicStick, CopyDocument } from '@element-plus/icons-vue'
 import {
   assistantV2Api,
+  type AssistantExistingItem,
   type AssistantPersonOption,
   type AssistantOverview,
   type DraftParseResponse,
@@ -32,6 +33,8 @@ const draftLoading = ref(false)
 const draftResult = ref<DraftParseResponse | null>(null)
 const people = ref<AssistantPersonOption[]>([])
 const peopleLoading = ref(false)
+const existingItems = ref<AssistantExistingItem[]>([])
+const existingItemsLoading = ref(false)
 const savedDraft = ref<SavedAssistantDraft | null>(null)
 const savingDraft = ref(false)
 const confirmingDraft = ref(false)
@@ -81,7 +84,7 @@ async function searchKnowledge() {
   }
 }
 
-async function createReport(type: 'daily' | 'weekly') {
+async function createReport(type: 'daily' | 'weekly' | 'monthly') {
   reportLoading.value = true
   try {
     reportResult.value = await assistantV2Api.createReportDraft(type)
@@ -101,10 +104,27 @@ async function parseDraft() {
     savedDraft.value = null
     metadataConfirmed.value = false
     riskAcknowledged.value = false
+    people.value = []
+    existingItems.value = []
     draftResult.value = await assistantV2Api.parseDraft(text, draftType.value)
-    await loadPeople(draftResult.value.draft_type)
+    if (draftResult.value.draft.operation) {
+      await loadExistingItems(draftResult.value.draft_type)
+    } else {
+      await loadPeople(draftResult.value.draft_type)
+    }
   } finally {
     draftLoading.value = false
+  }
+}
+
+async function loadExistingItems(draftType: 'task' | 'meeting') {
+  existingItemsLoading.value = true
+  try {
+    existingItems.value = await assistantV2Api.existingItems(draftType)
+  } catch {
+    existingItems.value = []
+  } finally {
+    existingItemsLoading.value = false
   }
 }
 
@@ -122,6 +142,12 @@ async function loadPeople(draftType: 'task' | 'meeting') {
 const parsedDraftReady = computed(() => {
   if (!draftResult.value) return false
   const draft = draftResult.value.draft
+  if (draftResult.value.draft_type === 'task' && draft.operation) {
+    return !!(draft.task_id && draft.expected_version > 0)
+  }
+  if (draftResult.value.draft_type === 'meeting' && draft.operation === 'cancel') {
+    return !!(draft.meeting_id && draft.expected_revision > 0 && draft.reason)
+  }
   if (draftResult.value.draft_type === 'task') {
     return !!(draft.title && draft.assignee_id && draft.due_at)
   }
@@ -133,6 +159,24 @@ const parsedDraftReady = computed(() => {
     (draft.location || draft.online_url || draft.video_enabled)
   )
 })
+
+function selectExistingItem(item: AssistantExistingItem) {
+  if (!draftResult.value) return
+  const draft = draftResult.value.draft
+  if (draftResult.value.draft_type === 'task') {
+    draft.task_id = item.id
+    draft.expected_version = item.version
+  } else {
+    draft.meeting_id = item.id
+    draft.expected_revision = item.version
+  }
+}
+
+function onExistingItemChange(value: string | Event) {
+  const id = typeof value === 'string' ? value : (value.target as HTMLSelectElement).value
+  const item = existingItems.value.find(row => row.id === id)
+  if (item) selectExistingItem(item)
+}
 
 function newOperationId() {
   confirmOperationId.value = crypto.randomUUID().replace(/-/g, '')
@@ -179,6 +223,22 @@ async function copyText(text: string, message = '已复制。') {
 const draftRows = computed(() => {
   if (!draftResult.value) return []
   const draft = draftResult.value.draft
+  if (draftResult.value.draft_type === 'task' && draft.operation) {
+    return [
+      { label: '操作类型', value: { complete: '完成任务', cancel: '取消任务' }[draft.operation as 'complete' | 'cancel'] },
+      { label: '目标任务', value: draft.task_id || '需人工选择' },
+      { label: '当前版本', value: draft.expected_version || '—' },
+      { label: '备注', value: draft.comment || '—' },
+    ]
+  }
+  if (draftResult.value.draft_type === 'meeting' && draft.operation === 'cancel') {
+    return [
+      { label: '操作类型', value: '取消会议' },
+      { label: '目标会议', value: draft.meeting_id || '需人工选择' },
+      { label: '当前版本', value: draft.expected_revision || '—' },
+      { label: '取消原因', value: draft.reason },
+    ]
+  }
   if (draftResult.value.draft_type === 'meeting') {
     return [
       { label: '会议主题', value: draft.title || '—' },
@@ -295,13 +355,14 @@ onMounted(() => {
         <header>
           <el-icon><Document /></el-icon>
           <div>
-            <h3>日报 / 周报草稿</h3>
+            <h3>日报 / 周报 / 月报草稿</h3>
             <p>依据本人有权访问的任务和会议数据起草。</p>
           </div>
         </header>
         <div class="button-row">
           <el-button :loading="reportLoading" @click="createReport('daily')">生成日报草稿</el-button>
           <el-button :loading="reportLoading" @click="createReport('weekly')">生成周报草稿</el-button>
+          <el-button :loading="reportLoading" @click="createReport('monthly')">生成月报草稿</el-button>
           <el-button v-if="reportResult" text :icon="CopyDocument" @click="copyText(reportResult.markdown, '草稿已复制。')">复制草稿</el-button>
         </div>
         <el-alert
@@ -318,8 +379,8 @@ onMounted(() => {
         <header>
           <el-icon><MagicStick /></el-icon>
           <div>
-            <h3>自然语言创建草稿</h3>
-            <p>先结构化任务或会议，不直接提交业务数据。</p>
+            <h3>自然语言任务与会议助手</h3>
+            <p>先结构化创建或操作事项，不直接提交业务数据。</p>
           </div>
         </header>
         <el-select v-model="draftType" class="draft-type" aria-label="草稿类型">
@@ -355,7 +416,42 @@ onMounted(() => {
             :closable="false"
           />
           <div class="draft-edit-grid">
-            <label v-if="draftResult.draft_type === 'task'">
+            <label v-if="draftResult.draft_type === 'task' && draftResult.draft.operation">
+              <span>目标任务</span>
+              <el-select
+                :model-value="draftResult.draft.task_id"
+                filterable
+                :loading="existingItemsLoading"
+                placeholder="选择要操作的任务"
+                @change="onExistingItemChange"
+              >
+                <el-option
+                  v-for="item in existingItems.filter(row =>
+                    row.available_actions.includes(draftResult!.draft.operation))"
+                  :key="item.id"
+                  :value="item.id"
+                  :label="`${item.id} · ${item.title}`"
+                />
+              </el-select>
+            </label>
+            <label v-else-if="draftResult.draft_type === 'meeting' && draftResult.draft.operation === 'cancel'">
+              <span>目标会议</span>
+              <el-select
+                :model-value="draftResult.draft.meeting_id"
+                filterable
+                :loading="existingItemsLoading"
+                placeholder="选择要取消的会议"
+                @change="onExistingItemChange"
+              >
+                <el-option
+                  v-for="item in existingItems.filter(row => row.available_actions.includes('cancel'))"
+                  :key="item.id"
+                  :value="item.id"
+                  :label="`${item.title} · 版本${item.version}`"
+                />
+              </el-select>
+            </label>
+            <label v-else-if="draftResult.draft_type === 'task'">
               <span>负责人</span>
               <el-select
                 v-model="draftResult.draft.assignee_id"

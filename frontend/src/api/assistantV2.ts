@@ -53,7 +53,7 @@ export interface KnowledgeSearchResponse {
 
 export interface ReportDraftResponse {
   title: string
-  report_type: 'daily' | 'weekly'
+  report_type: 'daily' | 'weekly' | 'monthly'
   period_start: string
   period_end: string
   markdown: string
@@ -83,6 +83,29 @@ export interface SavedAssistantDraft {
   updated_at: string
 }
 
+export interface TaskActionDraft {
+  operation: 'complete' | 'cancel'
+  task_id: string
+  expected_version: number
+  comment?: string
+}
+
+export interface MeetingActionDraft {
+  operation: 'cancel'
+  meeting_id: string
+  expected_revision: number
+  reason: string
+}
+
+export interface AssistantExistingItem {
+  id: string
+  title: string
+  status: string
+  version: number
+  time?: string | null
+  available_actions: string[]
+}
+
 export interface AssistantPersonOption {
   id: string
   display_name: string
@@ -96,7 +119,7 @@ export const assistantV2Api = {
   searchKnowledge(query: string, topK = 5): Promise<KnowledgeSearchResponse> {
     return client.post('/assistant-v2/knowledge/search', { query, top_k: topK })
   },
-  createReportDraft(reportType: 'daily' | 'weekly', date?: string): Promise<ReportDraftResponse> {
+  createReportDraft(reportType: 'daily' | 'weekly' | 'monthly', date?: string): Promise<ReportDraftResponse> {
     return client.post('/assistant-v2/reports/draft', {
       report_type: reportType,
       date: date || null,
@@ -107,6 +130,9 @@ export const assistantV2Api = {
   },
   peopleOptions(draftType: 'task' | 'meeting'): Promise<{ users: AssistantPersonOption[] }> {
     return client.get('/assistant-v2/options', { params: { draft_type: draftType } })
+  },
+  existingItems(draftType: 'task' | 'meeting'): Promise<AssistantExistingItem[]> {
+    return client.get('/assistant-v2/items', { params: { draft_type: draftType } })
   },
   saveDraft(draftType: 'task' | 'meeting', draft: Record<string, any>): Promise<SavedAssistantDraft> {
     return client.post('/assistant-v2/drafts', { draft_type: draftType, draft })

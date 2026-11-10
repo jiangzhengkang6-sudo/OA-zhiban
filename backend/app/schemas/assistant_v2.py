@@ -39,9 +39,9 @@ class KnowledgeSearchRequest(AssistantV2Request):
 
 
 class ReportDraftRequest(AssistantV2Request):
-    """日报或周报草稿生成请求。"""
+    """日报、周报或月报草稿生成请求。"""
 
-    report_type: Literal["daily", "weekly"]
+    report_type: Literal["daily", "weekly", "monthly"]
     date: str | None = Field(default=None, max_length=10)
 
     @field_validator("date")
@@ -64,7 +64,7 @@ class DraftParseRequest(AssistantV2Request):
 
 
 class AssistantTaskPayload(BaseModel):
-    """助手任务草稿的结构化内容。"""
+    """助手任务创建草稿的结构化内容。"""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -80,6 +80,39 @@ class AssistantTaskPayload(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("截止时间必须包含时区")
         return value
+
+
+class AssistantTaskActionPayload(BaseModel):
+    """助手对已有任务执行操作的草稿内容。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    operation: Literal["complete", "cancel"]
+    task_id: str = Field(min_length=1, max_length=64)
+    expected_version: int = Field(default=0, ge=0)
+    comment: str = Field(default="", max_length=2000)
+
+
+class AssistantMeetingActionPayload(BaseModel):
+    """助手对已有会议执行操作的草稿内容。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    operation: Literal["cancel"]
+    meeting_id: str = Field(min_length=1, max_length=64)
+    expected_revision: int = Field(default=0, ge=0)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class AssistantExistingItem(BaseModel):
+    """助手可操作的已有事项。"""
+
+    id: str
+    title: str
+    status: str
+    version: int
+    time: datetime | None = None
+    available_actions: list[str] = Field(default_factory=list)
 
 
 class DraftSaveRequest(AssistantV2Request):
@@ -150,10 +183,10 @@ class KnowledgeSearchResponse(BaseModel):
 
 
 class ReportDraftResponse(BaseModel):
-    """日报或周报草稿响应。"""
+    """日报、周报或月报草稿响应。"""
 
     title: str
-    report_type: Literal["daily", "weekly"]
+    report_type: Literal["daily", "weekly", "monthly"]
     period_start: datetime
     period_end: datetime
     markdown: str

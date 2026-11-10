@@ -31,6 +31,15 @@ async def options(
     return ok(await assistant_v2_service.options(session, user, draft_type))
 
 
+@router.get("/items")
+async def items(
+    draft_type: Literal["task", "meeting"],
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return ok(await assistant_v2_service.list_existing_items(session, user, draft_type))
+
+
 @router.post("/overview")
 async def overview(
     payload: OverviewRequest,
