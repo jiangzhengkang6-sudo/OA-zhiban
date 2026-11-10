@@ -1,20 +1,37 @@
-"""统一 OA 智能助手 V2 第一阶段服务。
+"""统一 OA 智能助手 V2 服务。
 
-本模块只聚合当前用户有权访问的 OA 权威数据，并生成可核对的草稿。
-自然语言解析结果不会直接写入业务库，必须由用户在专项工作台再次确认。
+本模块聚合当前用户有权访问的 OA 权威数据，生成可保存、可复核的草稿。
+自然语言解析结果不会直接写入业务库，必须由用户在专项工作台再次确认后写入。
 """
 
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timedelta
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
+
+from ..models.agent_thread import AgentThread
+from ..models.assistant_draft import AssistantDraft
+from ..models.identity import OAUser
+from ..models.work_task import WorkTask
+from ..models.work_task_batch import WorkTaskBatch
+from ..models.work_task_event import WorkTaskEvent
+from ..schemas.command import CommandEnvelope
+from ..schemas.oa_meeting import MeetingCommand, MeetingCreate, MeetingFields
+from ..core.enums import ErrorCode
 from ..core.errors import AppException
 from ..schemas.assistant_v2 import (
+    AssistantDraftResponse,
+    AssistantTaskPayload,
     AssistantCard,
     AssistantSection,
+    DraftCancelRequest,
+    DraftConfirmRequest,
+    DraftSaveRequest,
     DraftParseResponse,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
@@ -23,8 +40,17 @@ from ..schemas.assistant_v2 import (
     ReportDraftRequest,
     ReportDraftResponse,
 )
-from . import knowledge_service, meeting_management_service, oa_notification_service, public_mail_service, work_task_service
+from . import (
+    audit_service,
+    idempotency_service,
+    knowledge_service,
+    meeting_management_service,
+    oa_notification_service,
+    public_mail_service,
+    work_task_service,
+)
 from .authorization_service import require_fresh_identity, require_permission
+from .identity_service import current_identity, lock_tenant
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 WEEKDAY_LABELS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
@@ -697,4 +723,435 @@ async def parse_natural_draft(session, actor, payload) -> DraftParseResponse:
         warnings=parser.warnings,
         confirmation_notice="当前结果只是草稿；后续创建或安排前，系统会再次校验人员权限、租户隔离、冲突与幂等状态。",
     )
+
+
+async def options(session, actor, draft_type: str) -> dict[str, Any]:
+    """返回草稿可选人员；任务和会议分别执行各自的权限边界。"""
+
+    actor = await require_fresh_identity(actor, session=session)
+    if draft_type == "meeting":
+        return await meeting_management_service.options(session, actor)
+
+    require_permission(actor, "work_task", "write")
+    users: list[dict[str, Any]] = []
+    rows = (
+        await session.scalars(
+            select(OAUser)
+            .where(
+                OAUser.tenant_id == actor.tenant_id,
+                OAUser.status == "active",
+            )
+            .order_by(OAUser.display_name, OAUser.id)
+        )
+    ).all()
+    for user in rows:
+        member = await current_identity(session, user)
+        try:
+            require_permission(member, "work_task", "read")
+        except AppException:
+            continue
+        users.append(
+            {
+                "id": member.user_id,
+                "display_name": member.data_scope.get("display_name", member.user_id),
+                "department_id": member.depts[0] if member.depts else None,
+            }
+        )
+    return {"users": users}
+
+
+async def _validate_formal_identity(actor) -> Any:
+    """确认第二阶段写入能力只对正式身份账号开放。"""
+
+    actor = await require_fresh_identity(actor)
+    if actor.data_scope.get("identity_provider") != "builtin":
+        raise AppException(
+            ErrorCode.BAD_REQUEST,
+            "草稿保存与确认仅支持正式身份账号。",
+            http_status=422,
+        )
+    return actor
+
+
+def _risk_warning(priority: str, sensitive: bool, cross_department: bool) -> str | None:
+    if priority == "high":
+        return "高优先级任务确认时需勾选风险确认。"
+    if sensitive:
+        return "敏感任务确认时需勾选风险确认。"
+    if cross_department:
+        return "跨部门任务确认时需勾选风险确认。"
+    return None
+
+
+async def _validate_saved_payload(
+    session,
+    actor,
+    draft_type: str,
+    raw: dict[str, Any],
+) -> tuple[Any, list[str]]:
+    """把草稿内容转换为后端强类型结构，并执行实时权限校验。"""
+
+    warnings: list[str] = []
+    if draft_type == "task":
+        require_permission(actor, "work_task", "write")
+        payload = AssistantTaskPayload.model_validate(raw)
+        from ..providers.identity import IdentityResolver
+
+        target = await IdentityResolver().resolve(payload.assignee_id, session=session)
+        if target is None or target.tenant_id != actor.tenant_id:
+            raise AppException(
+                ErrorCode.BAD_REQUEST,
+                "负责人不存在或不属于当前租户。",
+                http_status=422,
+            )
+        require_permission(target, "work_task", "read")
+        cross_department = not set(target.depts).intersection(actor.depts)
+        warning = _risk_warning(payload.priority, payload.sensitive, cross_department)
+        if warning:
+            warnings.append(warning)
+        return payload, warnings
+
+    require_permission(actor, "meeting", "write")
+    payload = MeetingFields.model_validate(raw)
+    await meeting_management_service.members(session, actor, payload)
+    return payload, warnings
+
+
+def _draft_response(row: AssistantDraft) -> AssistantDraftResponse:
+    return AssistantDraftResponse(
+        id=row.id,
+        draft_type=row.draft_type,
+        status=row.status,
+        payload=row.payload,
+        missing_required=row.missing_required,
+        warnings=row.warnings,
+        result=row.result,
+        notes=row.notes,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+async def save_draft(session, actor, payload: DraftSaveRequest) -> AssistantDraftResponse:
+    """保存可复核草稿，此步骤不写入任务或会议。"""
+
+    actor = await require_fresh_identity(actor, session=session)
+    if actor.data_scope.get("identity_provider") != "builtin":
+        raise AppException(
+            ErrorCode.BAD_REQUEST,
+            "草稿保存仅支持正式身份账号。",
+            http_status=422,
+        )
+    await lock_tenant(session, actor.tenant_id)
+    structured_payload, warnings = await _validate_saved_payload(
+        session, actor, payload.draft_type, payload.draft
+    )
+    draft = AssistantDraft(
+        id=str(uuid4()),
+        tenant_id=actor.tenant_id,
+        owner_id=actor.user_id,
+        draft_type=payload.draft_type,
+        status="DRAFT",
+        payload=structured_payload.model_dump(mode="json"),
+        missing_required=[],
+        warnings=warnings,
+        result={},
+    )
+    session.add(draft)
+    await session.flush()
+    await audit_service.audit(
+        session,
+        "assistant_draft_saved",
+        actor_id=actor.user_id,
+        target_type="assistant_draft",
+        target_id=draft.id,
+        input_summary={"draft_type": draft.draft_type},
+    )
+    await session.refresh(draft)
+    return _draft_response(draft)
+
+
+async def _owned_draft(
+    session,
+    actor,
+    draft_id: str,
+    *,
+    lock: bool = False,
+) -> AssistantDraft:
+    query = select(AssistantDraft).where(
+        AssistantDraft.tenant_id == actor.tenant_id,
+        AssistantDraft.id == draft_id,
+        AssistantDraft.owner_id == actor.user_id,
+    )
+    if lock:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    row = await session.scalar(query)
+    if row is None:
+        raise AppException(ErrorCode.NOT_FOUND, "草稿不存在或不可访问", http_status=404)
+    return row
+
+
+async def _confirm_task_draft(
+    session,
+    actor,
+    draft: AssistantDraft,
+    payload,
+) -> None:
+    """确认后创建一条正式业务任务。"""
+
+    task_payload = AssistantTaskPayload.model_validate(draft.payload)
+    await work_task_service._assignee(
+        session,
+        actor,
+        task_payload.assignee_id,
+        task_payload.priority,
+        task_payload.sensitive,
+        payload.risk_acknowledged,
+    )
+    source_ref = f"assistant:{draft.id}:1"
+    snapshot = {
+        "ref": source_ref,
+        "source_type": "assistant",
+        "source_id": draft.id,
+        "version": "1",
+        "title": task_payload.title,
+        "content": task_payload.title,
+        "action_items": [],
+    }
+    thread = AgentThread(
+        tenant_id=actor.tenant_id,
+        user_id=actor.user_id,
+        scene="assistant_v2",
+        intent="create_task",
+        status="CONFIRMED",
+    )
+    session.add(thread)
+    await session.flush()
+    batch = WorkTaskBatch(
+        batch_id="WTB-" + uuid4().hex[:12].upper(),
+        thread_id=thread.id,
+        tenant_id=actor.tenant_id,
+        owner_id=actor.user_id,
+        source_type="assistant",
+        source_id=draft.id,
+        source_version="1",
+        source_snapshot=snapshot,
+        idempotency_key=payload.operation_id,
+    )
+    session.add(batch)
+    await session.flush()
+    task_id = "WT-" + uuid4().hex[:12].upper()
+    task = WorkTask(
+        id=uuid4(),
+        task_id=task_id,
+        batch_id=batch.id,
+        tenant_id=actor.tenant_id,
+        creator_id=actor.user_id,
+        assignee_id=task_payload.assignee_id,
+        source_type="assistant",
+        source_id=draft.id,
+        source_version="1",
+        candidate_id=draft.id,
+        source_refs=[source_ref],
+        title=task_payload.title,
+        priority=task_payload.priority,
+        sensitive=task_payload.sensitive,
+        due_at=task_payload.due_at,
+        status="OPEN",
+        progress=0,
+        version=1,
+        deadline_version=1,
+    )
+    session.add(task)
+    await session.flush()
+    session.add(
+        WorkTaskEvent(
+            task_id=task.id,
+            actor_id=actor.user_id,
+            action="created",
+            version=1,
+            details={"assistant_draft_id": draft.id},
+        )
+    )
+    thread.business_id = task_id
+    draft.result = {"task_id": task_id}
+    await audit_service.audit(
+        session,
+        "assistant_task_created",
+        thread_id=thread.id,
+        business_id=task_id,
+        actor_id=actor.user_id,
+        target_type="work_task",
+        target_id=task_id,
+    )
+
+
+async def _confirm_meeting_draft(
+    session,
+    actor,
+    draft: AssistantDraft,
+) -> None:
+    """确认后创建并发布一场正式会议。"""
+
+    meeting_payload = MeetingFields.model_validate(draft.payload)
+    save_operation_id = str(
+        uuid5(NAMESPACE_URL, f"{actor.tenant_id}:{draft.id}:meeting-save")
+    )
+    save_outcome = await meeting_management_service.save(
+        session,
+        actor,
+        MeetingCreate(
+            **meeting_payload.model_dump(mode="json"),
+            operation_id=save_operation_id,
+        ),
+    )
+    meeting_id = save_outcome.result["id"]
+    publish_operation_id = str(
+        uuid5(NAMESPACE_URL, f"{actor.tenant_id}:{draft.id}:meeting-publish")
+    )
+    await meeting_management_service.transition(
+        session,
+        actor,
+        meeting_id,
+        MeetingCommand(
+            operation_id=publish_operation_id,
+            expected_revision=save_outcome.result["revision"],
+        ),
+        "publish",
+    )
+    draft.result = {"meeting_id": meeting_id, "state": "SCHEDULED"}
+    await audit_service.audit(
+        session,
+        "assistant_meeting_published",
+        business_id=meeting_id,
+        actor_id=actor.user_id,
+        target_type="oa_meeting",
+        target_id=meeting_id,
+    )
+
+
+async def confirm_draft(
+    session,
+    actor,
+    draft_id: str,
+    payload: DraftConfirmRequest,
+) -> AssistantDraftResponse:
+    """确认草稿并写入正式业务数据。"""
+
+    actor = await require_fresh_identity(actor, session=session)
+    if actor.data_scope.get("identity_provider") != "builtin":
+        raise AppException(
+            ErrorCode.BAD_REQUEST,
+            "草稿确认仅支持正式身份账号。",
+            http_status=422,
+        )
+    if not payload.metadata_confirmed:
+        raise AppException(
+            ErrorCode.BAD_REQUEST,
+            "请先核对会议或任务内容，并勾选信息确认。",
+            http_status=422,
+        )
+
+    await lock_tenant(session, actor.tenant_id)
+    draft = await _owned_draft(session, actor, draft_id, lock=True)
+    await session.refresh(draft)
+    if draft.status == "CONFIRMED":
+        return _draft_response(draft)
+    if draft.status != "DRAFT":
+        raise AppException(
+            ErrorCode.INVALID_STATE,
+            "当前草稿不可确认。",
+            http_status=422,
+        )
+
+    # 再次执行强类型校验，防止保存后人员、权限或时间状态发生变化。
+    await _validate_saved_payload(session, actor, draft.draft_type, draft.payload)
+    envelope = CommandEnvelope(
+        command_id=uuid4(),
+        idempotency_key=payload.operation_id,
+        actor_id=actor.user_id,
+        tenant_id=actor.tenant_id,
+        resource_type="assistant_draft",
+        resource_id=draft.id,
+        trace_id=uuid4().hex,
+        payload={
+            "draft_type": draft.draft_type,
+            "payload": draft.payload,
+            "metadata_confirmed": payload.metadata_confirmed,
+            "risk_acknowledged": payload.risk_acknowledged,
+        },
+    )
+    command, fresh = await idempotency_service.claim(session, envelope)
+    if fresh:
+        if draft.draft_type == "task":
+            await _confirm_task_draft(session, actor, draft, payload)
+        else:
+            await _confirm_meeting_draft(session, actor, draft)
+        draft.status = "CONFIRMED"
+        draft.confirmed_at = datetime.now(timezone.utc)
+        await session.flush()
+        await idempotency_service.complete(
+            session,
+            command,
+            {"result": draft.result},
+        )
+        await session.refresh(draft)
+    return _draft_response(draft)
+
+
+async def list_saved_drafts(session, actor) -> list[AssistantDraftResponse]:
+    actor = await require_fresh_identity(actor, session=session)
+    rows = (
+        await session.scalars(
+            select(AssistantDraft)
+            .where(
+                AssistantDraft.tenant_id == actor.tenant_id,
+                AssistantDraft.owner_id == actor.user_id,
+            )
+            .order_by(AssistantDraft.updated_at.desc())
+            .limit(100)
+        )
+    ).all()
+    return [_draft_response(row) for row in rows]
+
+
+async def get_saved_draft(
+    session,
+    actor,
+    draft_id: str,
+) -> AssistantDraftResponse:
+    actor = await require_fresh_identity(actor, session=session)
+    return _draft_response(await _owned_draft(session, actor, draft_id))
+
+
+async def cancel_saved_draft(
+    session,
+    actor,
+    draft_id: str,
+    payload: DraftCancelRequest,
+) -> AssistantDraftResponse:
+    actor = await require_fresh_identity(actor, session=session)
+    await lock_tenant(session, actor.tenant_id)
+    draft = await _owned_draft(session, actor, draft_id, lock=True)
+    if draft.status != "DRAFT":
+        raise AppException(
+            ErrorCode.INVALID_STATE,
+            "仅未确认草稿可以取消。",
+            http_status=422,
+        )
+    draft.status = "CANCELLED"
+    draft.notes = payload.reason
+    draft.missing_required = []
+    draft.warnings = []
+    await session.flush()
+    await audit_service.audit(
+        session,
+        "assistant_draft_cancelled",
+        actor_id=actor.user_id,
+        target_type="assistant_draft",
+        target_id=draft.id,
+        output_summary={"reason": payload.reason},
+    )
+    await session.refresh(draft)
+    return _draft_response(draft)
 

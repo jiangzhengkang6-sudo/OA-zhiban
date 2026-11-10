@@ -1,10 +1,15 @@
 """统一 OA 智能助手 V2 路由。"""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.session import get_db
 from ...schemas.assistant_v2 import (
+    DraftCancelRequest,
+    DraftConfirmRequest,
+    DraftSaveRequest,
     DraftParseRequest,
     KnowledgeSearchRequest,
     OverviewRequest,
@@ -15,6 +20,15 @@ from ...services import assistant_v2_service
 from ..deps import get_current_user
 
 router = APIRouter(prefix="/assistant-v2", tags=["统一智能助手"])
+
+
+@router.get("/options")
+async def options(
+    draft_type: Literal["task", "meeting"],
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return ok(await assistant_v2_service.options(session, user, draft_type))
 
 
 @router.post("/overview")
@@ -51,4 +65,56 @@ async def parse_draft(
     user=Depends(get_current_user),
 ):
     return ok(await assistant_v2_service.parse_natural_draft(session, user, payload))
+
+
+@router.post("/drafts")
+async def save_draft(
+    payload: DraftSaveRequest,
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = await assistant_v2_service.save_draft(session, user, payload)
+    await session.commit()
+    return ok(result)
+
+
+@router.get("/drafts")
+async def list_drafts(
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return ok(await assistant_v2_service.list_saved_drafts(session, user))
+
+
+@router.get("/drafts/{draft_id}")
+async def get_draft(
+    draft_id: str,
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return ok(await assistant_v2_service.get_saved_draft(session, user, draft_id))
+
+
+@router.post("/drafts/{draft_id}/confirm")
+async def confirm_draft(
+    draft_id: str,
+    payload: DraftConfirmRequest,
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = await assistant_v2_service.confirm_draft(session, user, draft_id, payload)
+    await session.commit()
+    return ok(result)
+
+
+@router.post("/drafts/{draft_id}/cancel")
+async def cancel_draft(
+    draft_id: str,
+    payload: DraftCancelRequest,
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = await assistant_v2_service.cancel_saved_draft(session, user, draft_id, payload)
+    await session.commit()
+    return ok(result)
 

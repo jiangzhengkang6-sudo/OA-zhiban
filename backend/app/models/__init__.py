@@ -12,6 +12,7 @@ from .oa_leave import OALeave, OALeaveVersion, OALeaveBalance, OALeaveLedger, OA
 from .oa_reimbursement import OAReimbursement, OAReimbursementVersion, OAReimbursementAttachment
 from .oa_ticket import OATicket,OATicketAssignmentRule,OATicketFeedback
 from .oa_bridge import OABridgeConfirmation,OABridgeResult
+from .assistant_draft import AssistantDraft
 from .oa_notification import OAUserContact,OANotification,OANotificationDelivery,OANotificationAttempt
 from .oa_announcement import OAAnnouncement, OAAnnouncementRead
 from .oa_meeting import OAMeeting, OAMeetingAttendee

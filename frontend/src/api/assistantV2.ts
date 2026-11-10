@@ -70,6 +70,25 @@ export interface DraftParseResponse {
   confirmation_notice: string
 }
 
+export interface SavedAssistantDraft {
+  id: string
+  draft_type: 'task' | 'meeting'
+  status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED'
+  payload: Record<string, any>
+  missing_required: string[]
+  warnings: string[]
+  result: Record<string, any>
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AssistantPersonOption {
+  id: string
+  display_name: string
+  department_id?: string | null
+}
+
 export const assistantV2Api = {
   overview(date?: string): Promise<AssistantOverview> {
     return client.post('/assistant-v2/overview', { date: date || null })
@@ -85,6 +104,31 @@ export const assistantV2Api = {
   },
   parseDraft(text: string, draftType: 'auto' | 'task' | 'meeting' = 'auto'): Promise<DraftParseResponse> {
     return client.post('/assistant-v2/drafts/parse', { text, draft_type: draftType })
+  },
+  peopleOptions(draftType: 'task' | 'meeting'): Promise<{ users: AssistantPersonOption[] }> {
+    return client.get('/assistant-v2/options', { params: { draft_type: draftType } })
+  },
+  saveDraft(draftType: 'task' | 'meeting', draft: Record<string, any>): Promise<SavedAssistantDraft> {
+    return client.post('/assistant-v2/drafts', { draft_type: draftType, draft })
+  },
+  listDrafts(): Promise<SavedAssistantDraft[]> {
+    return client.get('/assistant-v2/drafts')
+  },
+  getDraft(id: string): Promise<SavedAssistantDraft> {
+    return client.get(`/assistant-v2/drafts/${id}`)
+  },
+  confirmDraft(
+    id: string,
+    payload: {
+      operation_id: string
+      metadata_confirmed: boolean
+      risk_acknowledged: boolean
+    },
+  ): Promise<SavedAssistantDraft> {
+    return client.post(`/assistant-v2/drafts/${id}/confirm`, payload)
+  },
+  cancelDraft(id: string, reason = ''): Promise<SavedAssistantDraft> {
+    return client.post(`/assistant-v2/drafts/${id}/cancel`, { reason })
   },
 }
 

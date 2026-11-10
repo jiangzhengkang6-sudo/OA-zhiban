@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * 统一 OA 智能助手 V2 第一阶段面板。
+ * 统一 OA 智能助手 V2 面板。
  *
  * 提供今日总览、统一知识检索、日报/周报草稿、自然语言任务/会议草稿。
- * 本组件不直接执行高影响写操作。
+ * 自然语言结果先保存为可复核草稿，确认后才写入正式业务数据。
  */
 
 import { computed, onMounted, ref } from 'vue'
@@ -11,10 +11,12 @@ import { ElMessage } from 'element-plus'
 import { Refresh, Search, Document, MagicStick, CopyDocument } from '@element-plus/icons-vue'
 import {
   assistantV2Api,
+  type AssistantPersonOption,
   type AssistantOverview,
   type DraftParseResponse,
   type KnowledgeSearchResponse,
   type ReportDraftResponse,
+  type SavedAssistantDraft,
 } from '@/api/assistantV2'
 
 const overview = ref<AssistantOverview | null>(null)
@@ -28,6 +30,14 @@ const draftText = ref('')
 const draftType = ref<'auto' | 'task' | 'meeting'>('auto')
 const draftLoading = ref(false)
 const draftResult = ref<DraftParseResponse | null>(null)
+const people = ref<AssistantPersonOption[]>([])
+const peopleLoading = ref(false)
+const savedDraft = ref<SavedAssistantDraft | null>(null)
+const savingDraft = ref(false)
+const confirmingDraft = ref(false)
+const confirmOperationId = ref('')
+const metadataConfirmed = ref(false)
+const riskAcknowledged = ref(false)
 
 const statCards = computed(() => {
   const sections = overview.value?.sections || []
@@ -88,10 +98,77 @@ async function parseDraft() {
   }
   draftLoading.value = true
   try {
+    savedDraft.value = null
+    metadataConfirmed.value = false
+    riskAcknowledged.value = false
     draftResult.value = await assistantV2Api.parseDraft(text, draftType.value)
+    await loadPeople(draftResult.value.draft_type)
   } finally {
     draftLoading.value = false
   }
+}
+
+async function loadPeople(draftType: 'task' | 'meeting') {
+  peopleLoading.value = true
+  try {
+    people.value = (await assistantV2Api.peopleOptions(draftType)).users
+  } catch {
+    people.value = []
+  } finally {
+    peopleLoading.value = false
+  }
+}
+
+const parsedDraftReady = computed(() => {
+  if (!draftResult.value) return false
+  const draft = draftResult.value.draft
+  if (draftResult.value.draft_type === 'task') {
+    return !!(draft.title && draft.assignee_id && draft.due_at)
+  }
+  return !!(
+    draft.title &&
+    draft.starts_at &&
+    draft.ends_at &&
+    draft.attendee_ids?.length &&
+    (draft.location || draft.online_url || draft.video_enabled)
+  )
+})
+
+function newOperationId() {
+  confirmOperationId.value = crypto.randomUUID().replace(/-/g, '')
+}
+
+async function saveParsedDraft() {
+  if (!draftResult.value || !parsedDraftReady.value) return
+  savingDraft.value = true
+  try {
+    savedDraft.value = await assistantV2Api.saveDraft(
+      draftResult.value.draft_type,
+      draftResult.value.draft,
+    )
+    newOperationId()
+  } finally {
+    savingDraft.value = false
+  }
+}
+
+async function confirmSavedDraft() {
+  if (!savedDraft.value || !confirmOperationId.value || !metadataConfirmed.value) return
+  confirmingDraft.value = true
+  try {
+    savedDraft.value = await assistantV2Api.confirmDraft(savedDraft.value.id, {
+      operation_id: confirmOperationId.value,
+      metadata_confirmed: metadataConfirmed.value,
+      risk_acknowledged: riskAcknowledged.value,
+    })
+  } finally {
+    confirmingDraft.value = false
+  }
+}
+
+async function cancelSavedDraft() {
+  if (!savedDraft.value) return
+  savedDraft.value = await assistantV2Api.cancelDraft(savedDraft.value.id, '用户在统一助手中取消')
 }
 
 async function copyText(text: string, message = '已复制。') {
@@ -277,6 +354,52 @@ onMounted(() => {
             type="info"
             :closable="false"
           />
+          <div class="draft-edit-grid">
+            <label v-if="draftResult.draft_type === 'task'">
+              <span>负责人</span>
+              <el-select
+                v-model="draftResult.draft.assignee_id"
+                filterable
+                :loading="peopleLoading"
+                placeholder="选择正式负责人"
+              >
+                <el-option
+                  v-for="person in people"
+                  :key="person.id"
+                  :value="person.id"
+                  :label="person.display_name"
+                />
+              </el-select>
+            </label>
+            <label v-else class="meeting-attendee-field">
+              <span>参会人员（正式账号）</span>
+              <el-select
+                v-model="draftResult.draft.attendee_ids"
+                multiple
+                filterable
+                :loading="peopleLoading"
+                collapse-tags
+                collapse-tags-tooltip
+                placeholder="选择参会人员"
+              >
+                <el-option
+                  v-for="person in people"
+                  :key="person.id"
+                  :value="person.id"
+                  :label="person.display_name"
+                />
+              </el-select>
+            </label>
+          </div>
+          <div class="draft-save-actions">
+            <el-button
+              type="primary"
+              plain
+              :loading="savingDraft"
+              :disabled="!parsedDraftReady"
+              @click="saveParsedDraft"
+            >保存可确认草稿</el-button>
+          </div>
           <dl>
             <template v-for="row in draftRows" :key="row.label">
               <dt>{{ row.label }}</dt>
@@ -285,6 +408,61 @@ onMounted(() => {
           </dl>
           <el-button text :icon="CopyDocument" @click="copyText(JSON.stringify(draftResult.draft, null, 2), '草稿 JSON 已复制。')">复制 JSON</el-button>
           <p class="confirmation-note">{{ draftResult.confirmation_notice }}</p>
+
+          <div v-if="savedDraft" class="saved-draft-panel">
+            <header>
+              <div>
+                <h4>已保存草稿：{{ savedDraft.id.slice(0, 8) }}</h4>
+                <el-tag size="small" :type="savedDraft.status === 'CONFIRMED' ? 'success' : 'info'">
+                  {{ { DRAFT: '待确认', CONFIRMED: '已确认', CANCELLED: '已取消' }[savedDraft.status] }}
+                </el-tag>
+              </div>
+            </header>
+            <template v-if="savedDraft.status === 'DRAFT'">
+              <el-alert
+                v-for="warning in savedDraft.warnings"
+                :key="warning"
+                :title="warning"
+                type="warning"
+                :closable="false"
+              />
+              <div class="confirm-form">
+                <label>
+                  <span>操作幂等编号</span>
+                  <el-input v-model="confirmOperationId" readonly />
+                </label>
+                <el-checkbox v-model="metadataConfirmed">
+                  我已核对内容、人员、时间和权限信息
+                </el-checkbox>
+                <el-checkbox v-if="savedDraft.warnings.length" v-model="riskAcknowledged">
+                  我已知晓跨部门、高优先级或敏感事项风险
+                </el-checkbox>
+                <div class="confirm-actions">
+                  <el-button :disabled="confirmingDraft" @click="cancelSavedDraft">取消草稿</el-button>
+                  <el-button
+                    type="primary"
+                    :loading="confirmingDraft"
+                    :disabled="!metadataConfirmed || !!savedDraft.warnings.length && !riskAcknowledged"
+                    @click="confirmSavedDraft"
+                  >确认并写入</el-button>
+                </div>
+              </div>
+            </template>
+            <div v-else-if="savedDraft.status === 'CONFIRMED'" class="confirmed-result">
+              <router-link v-if="savedDraft.result.task_id" :to="`/work-tasks/${savedDraft.result.task_id}`">
+                查看业务任务：{{ savedDraft.result.task_id }}
+              </router-link>
+              <router-link v-if="savedDraft.result.meeting_id" :to="`/meeting-events/${savedDraft.result.meeting_id}`">
+                查看会议安排：{{ savedDraft.result.meeting_id.slice(0, 8) }}
+              </router-link>
+            </div>
+            <el-alert
+              v-else-if="savedDraft.status === 'CANCELLED'"
+              :title="`草稿已取消：${savedDraft.notes || '未填写取消原因'}`"
+              type="info"
+              :closable="false"
+            />
+          </div>
         </div>
       </article>
     </div>
@@ -531,6 +709,64 @@ onMounted(() => {
 .draft-result dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+.draft-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin: 14px 0;
+}
+.draft-edit-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--oa-muted);
+  font-size: 13px;
+}
+.draft-edit-grid .el-select {
+  width: 100%;
+}
+.draft-save-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0 14px;
+}
+.saved-draft-panel {
+  border: 1px solid var(--oa-border);
+  border-radius: 8px;
+  padding: 14px;
+  margin-top: 16px;
+  background: #f8faf9;
+}
+.saved-draft-panel h4 {
+  margin: 0 8px 0 0;
+  font-size: 14px;
+}
+.saved-draft-panel header {
+  margin-bottom: 12px;
+}
+.confirm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.confirm-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--oa-muted);
+  font-size: 13px;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.confirmed-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 @media (max-width: 1000px) {
   .stat-grid,

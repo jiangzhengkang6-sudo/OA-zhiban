@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .oa_meeting import MeetingFields
+
 
 class AssistantV2Request(BaseModel):
     """统一助手请求基类，禁止客户端传入未声明字段。"""
@@ -59,6 +61,46 @@ class DraftParseRequest(AssistantV2Request):
 
     text: str = Field(min_length=1, max_length=3000)
     draft_type: Literal["auto", "task", "meeting"] = "auto"
+
+
+class AssistantTaskPayload(BaseModel):
+    """助手任务草稿的结构化内容。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(min_length=1, max_length=255)
+    assignee_id: str = Field(min_length=1, max_length=64)
+    due_at: datetime
+    priority: Literal["low", "normal", "high"] = "normal"
+    sensitive: bool = False
+
+    @field_validator("due_at")
+    @classmethod
+    def aware_due_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("截止时间必须包含时区")
+        return value
+
+
+class DraftSaveRequest(AssistantV2Request):
+    """保存助手草稿请求。"""
+
+    draft_type: Literal["task", "meeting"]
+    draft: dict[str, Any]
+
+
+class DraftConfirmRequest(AssistantV2Request):
+    """确认执行助手草稿请求。"""
+
+    operation_id: str = Field(min_length=1, max_length=48)
+    metadata_confirmed: bool
+    risk_acknowledged: bool = False
+
+
+class DraftCancelRequest(AssistantV2Request):
+    """取消助手草稿请求。"""
+
+    reason: str = Field(default="", max_length=500)
 
 
 class AssistantCard(BaseModel):
@@ -128,4 +170,19 @@ class DraftParseResponse(BaseModel):
     missing_required: list[str]
     warnings: list[str]
     confirmation_notice: str
+
+
+class AssistantDraftResponse(BaseModel):
+    """已保存助手草稿响应。"""
+
+    id: str
+    draft_type: Literal["task", "meeting"]
+    status: Literal["DRAFT", "CONFIRMED", "CANCELLED"]
+    payload: dict[str, Any]
+    missing_required: list[str]
+    warnings: list[str]
+    result: dict[str, Any]
+    notes: str = ""
+    created_at: datetime
+    updated_at: datetime
 

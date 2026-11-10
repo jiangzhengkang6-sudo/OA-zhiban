@@ -10,6 +10,12 @@ vi.mock('@/api/assistantV2', () => ({
     searchKnowledge: vi.fn(),
     createReportDraft: vi.fn(),
     parseDraft: vi.fn(),
+    peopleOptions: vi.fn(),
+    saveDraft: vi.fn(),
+    listDrafts: vi.fn(),
+    getDraft: vi.fn(),
+    confirmDraft: vi.fn(),
+    cancelDraft: vi.fn(),
   },
 }))
 
@@ -47,6 +53,12 @@ const overview = {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(assistantV2Api.overview).mockResolvedValue(overview as any)
+  vi.mocked(assistantV2Api.peopleOptions).mockResolvedValue({
+    users: [
+      { id: 'u_li', display_name: '李四' },
+      { id: 'u_zhang', display_name: '张三' },
+    ],
+  })
 })
 
 async function render() {
@@ -105,6 +117,73 @@ describe('统一智能助手 V2 面板', () => {
     expect(wrapper.text()).toContain('会议草稿')
     expect(wrapper.text()).toContain('参会人员需人工选择')
     expect(wrapper.text()).toContain('当前结果只是草稿')
+  }, 15000)
+
+  it('保存任务草稿，复核确认后才写入正式任务', async () => {
+    const draft = {
+      title: '整理客户合同',
+      assignee_id: 'u_li',
+      due_at: '2026-11-11T18:00:00+08:00',
+      priority: 'normal',
+      sensitive: false,
+    }
+    vi.mocked(assistantV2Api.parseDraft).mockResolvedValue({
+      draft_type: 'task',
+      confidence: 'high',
+      draft,
+      missing_required: [],
+      warnings: [],
+      confirmation_notice: '当前结果只是草稿。',
+    } as any)
+    vi.mocked(assistantV2Api.saveDraft).mockResolvedValue({
+      id: 'draft-1',
+      draft_type: 'task',
+      status: 'DRAFT',
+      payload: draft,
+      missing_required: [],
+      warnings: [],
+      result: {},
+      notes: '',
+      created_at: '2026-11-10T10:00:00+08:00',
+      updated_at: '2026-11-10T10:00:00+08:00',
+    } as any)
+    vi.mocked(assistantV2Api.confirmDraft).mockResolvedValue({
+      id: 'draft-1',
+      draft_type: 'task',
+      status: 'CONFIRMED',
+      payload: draft,
+      missing_required: [],
+      warnings: [],
+      result: { task_id: 'WT-123' },
+      notes: '',
+      created_at: '2026-11-10T10:00:00+08:00',
+      updated_at: '2026-11-10T10:00:00+08:00',
+    } as any)
+
+    const wrapper = await render()
+    await wrapper.get('textarea').setValue('明天提醒李四整理客户合同')
+    const parseButton = wrapper.findAll('button').find(item => item.text().includes('生成结构化草稿'))!
+    await parseButton.trigger('click')
+    await flushPromises()
+
+    const saveButton = wrapper.findAll('button').find(item => item.text().includes('保存可确认草稿'))!
+    await saveButton.trigger('click')
+    await flushPromises()
+    expect(assistantV2Api.saveDraft).toHaveBeenCalledWith('task', draft)
+
+    await wrapper.get('.confirm-form input[type="checkbox"]').setValue(true)
+    const confirmButton = wrapper.findAll('button').find(item => item.text().includes('确认并写入'))!
+    await confirmButton.trigger('click')
+    await flushPromises()
+
+    expect(assistantV2Api.confirmDraft).toHaveBeenCalledWith(
+      'draft-1',
+      expect.objectContaining({
+        metadata_confirmed: true,
+        risk_acknowledged: false,
+      }),
+    )
+    expect(wrapper.text()).toContain('查看业务任务：WT-123')
   }, 15000)
 })
 
