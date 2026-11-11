@@ -14,6 +14,7 @@ from ...schemas.assistant_v2 import (
     KnowledgeSearchRequest,
     OverviewRequest,
     ReportDraftRequest,
+    ScheduleResumeRequest,
 )
 from ...schemas.common import ok
 from ...services import assistant_v2_service
@@ -148,6 +149,23 @@ async def cancel_schedule(
         user,
         schedule_id,
         payload.reason,
+    )
+    await session.commit()
+    return ok(result)
+
+
+@router.post("/schedules/{schedule_id}/resume")
+async def resume_schedule(
+    schedule_id: str,
+    payload: ScheduleResumeRequest,
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = await assistant_v2_service.resume_schedule_rule(
+        session,
+        user,
+        schedule_id,
+        payload.note,
     )
     await session.commit()
     return ok(result)

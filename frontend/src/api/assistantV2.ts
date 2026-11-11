@@ -98,6 +98,7 @@ export interface AssistantSchedule {
   max_occurrences?: number | null
   occurrence_count: number
   template: Record<string, any>
+  pause_reason?: string | null
   created_at: string
   updated_at: string
 }
@@ -180,6 +181,9 @@ export const assistantV2Api = {
   },
   cancelSchedule(id: string, reason = '用户在统一助手中取消周期规则'): Promise<AssistantSchedule> {
     return client.post(`/assistant-v2/schedules/${id}/cancel`, { reason })
+  },
+  resumeSchedule(id: string, note = '用户在统一助手中恢复周期规则'): Promise<AssistantSchedule> {
+    return client.post(`/assistant-v2/schedules/${id}/resume`, { note })
   },
 }
 

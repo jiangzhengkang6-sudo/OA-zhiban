@@ -19,6 +19,7 @@ vi.mock('@/api/assistantV2', () => ({
     cancelDraft: vi.fn(),
     listSchedules: vi.fn(),
     cancelSchedule: vi.fn(),
+    resumeSchedule: vi.fn(),
   },
 }))
 
@@ -331,6 +332,19 @@ describe('统一智能助手 V2 面板', () => {
         created_at: '2026-11-11T10:00:00+08:00',
         updated_at: '2026-11-11T10:00:00+08:00',
       },
+      {
+        id: 'schedule-rule-2',
+        status: 'PAUSED',
+        title: '核对报销',
+        frequency: 'monthly',
+        run_time: '10:00:00+08:00',
+        next_run_at: null,
+        occurrence_count: 1,
+        pause_reason: '周期规则安全校验未通过：权限变化',
+        template: {},
+        created_at: '2026-11-11T10:00:00+08:00',
+        updated_at: '2026-11-11T10:00:00+08:00',
+      },
     ] as any)
 
     const wrapper = await render()
@@ -357,6 +371,13 @@ describe('统一智能助手 V2 面板', () => {
     )
     expect(wrapper.text()).toContain('周期规则已创建')
     expect(wrapper.text()).toContain('我的周期规则')
+    expect(wrapper.text()).toContain('已暂停')
+    expect(wrapper.text()).toContain('暂停原因：周期规则安全校验未通过：权限变化')
+
+    const resumeButton = wrapper.findAll('button').find(item => item.text().includes('恢复规则'))!
+    await resumeButton.trigger('click')
+    await flushPromises()
+    expect(assistantV2Api.resumeSchedule).toHaveBeenCalledWith('schedule-rule-2')
   }, 15000)
 })
 

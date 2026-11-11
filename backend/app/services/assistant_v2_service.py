@@ -1486,7 +1486,10 @@ async def confirm_draft(
     command, fresh = await idempotency_service.claim(session, envelope)
     if fresh:
         if draft.draft_type == "schedule":
-            await assistant_schedule_service.create_schedule(session, actor, draft)
+            if draft.payload.get("schedule_id"):
+                await assistant_schedule_service.update_schedule(session, actor, draft)
+            else:
+                await assistant_schedule_service.create_schedule(session, actor, draft)
         elif (
             draft.draft_type == "task"
             and draft.payload.get("operation", "create") != "create"
@@ -1584,5 +1587,23 @@ async def cancel_schedule_rule(session, actor, schedule_id: str, reason: str):
         actor,
         schedule_id,
         reason,
+    )
+
+
+async def resume_schedule_rule(session, actor, schedule_id: str, note: str = ""):
+    """复核后恢复当前用户的已暂停周期规则。"""
+
+    actor = await require_fresh_identity(actor, session=session)
+    if actor.data_scope.get("identity_provider") != "builtin":
+        raise AppException(
+            ErrorCode.BAD_REQUEST,
+            "周期规则恢复仅支持正式身份账号。",
+            http_status=422,
+        )
+    return await assistant_schedule_service.resume_schedule(
+        session,
+        actor,
+        schedule_id,
+        note,
     )
 

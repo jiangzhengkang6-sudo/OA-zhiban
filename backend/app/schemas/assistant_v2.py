@@ -103,6 +103,7 @@ class AssistantSchedulePayload(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     title: str = Field(min_length=1, max_length=255)
+    schedule_id: str | None = Field(default=None, max_length=64)
     frequency: Literal["daily", "weekly", "monthly"]
     day_of_week: int | None = Field(default=None, ge=0, le=6)
     day_of_month: int | None = Field(default=None, ge=1, le=28)
@@ -278,6 +279,13 @@ class AssistantScheduleResponse(BaseModel):
     max_occurrences: int | None
     occurrence_count: int
     template: dict[str, Any]
+    pause_reason: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ScheduleResumeRequest(AssistantV2Request):
+    """恢复周期规则请求。"""
+
+    note: str = Field(default="", max_length=500)
 

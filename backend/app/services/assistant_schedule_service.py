@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -45,6 +45,16 @@ def validate_schedule_payload(
     now = now_shanghai()
     start = payload.starts_at.astimezone(SHANGHAI_TZ) if payload.starts_at else now
 
+    if payload.schedule_id:
+        try:
+            UUID(payload.schedule_id)
+        except ValueError:
+            raise AppException(
+                ErrorCode.BAD_REQUEST,
+                "周期规则编号格式不正确。",
+                http_status=422,
+            ) from None
+
     if payload.frequency == "daily":
         if payload.day_of_week is not None or payload.day_of_month is not None:
             raise AppException(ErrorCode.BAD_REQUEST, "每日规则不能设置星期或日期。", http_status=422)
@@ -66,7 +76,8 @@ def validate_schedule_payload(
         ends_at = payload.ends_at.astimezone(SHANGHAI_TZ)
         if ends_at <= start:
             raise AppException(ErrorCode.BAD_REQUEST, "结束时间必须晚于开始时间。", http_status=422)
-        if ends_at > start + timedelta(days=MAX_HORIZON_DAYS):
+        # 以当前时间为基准限制跨度，保证长期规则编辑缩短时不会被历史开始时间卡住。
+        if ends_at > now + timedelta(days=MAX_HORIZON_DAYS):
             raise AppException(
                 ErrorCode.BAD_REQUEST,
                 f"周期规则最长不得超过 {MAX_HORIZON_DAYS} 天。",
@@ -188,6 +199,7 @@ def _schedule_response(row: AssistantSchedule) -> AssistantScheduleResponse:
         max_occurrences=row.max_occurrences,
         occurrence_count=row.occurrence_count,
         template=row.template,
+        pause_reason=row.pause_reason,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -222,6 +234,7 @@ async def cancel_schedule(
         raise AppException(ErrorCode.INVALID_STATE, "当前规则状态不可取消。", http_status=422)
     row.status = "CANCELLED"
     row.next_run_at = None
+    row.pause_reason = None
     await session.flush()
     await audit_service.audit(
         session,
@@ -251,6 +264,7 @@ async def _owned_schedule(session, actor, schedule_id: str, *, lock: bool = Fals
 async def _pause_schedule(session, schedule: AssistantSchedule, reason: str) -> None:
     schedule.status = "PAUSED"
     schedule.next_run_at = None
+    schedule.pause_reason = reason[:500]
     await session.flush()
     await audit_service.audit(
         session,
@@ -260,6 +274,151 @@ async def _pause_schedule(session, schedule: AssistantSchedule, reason: str) -> 
         target_id=schedule.id,
         output_summary={"reason": reason[:500]},
     )
+
+
+def _rule_payload(row: AssistantSchedule) -> AssistantSchedulePayload:
+    """依据数据库规则构造强类型快照，用于恢复前的再校验。"""
+
+    return AssistantSchedulePayload(
+        title=row.title,
+        schedule_id=row.id,
+        frequency=row.frequency,
+        day_of_week=row.day_of_week,
+        day_of_month=row.day_of_month,
+        run_time=row.run_time,
+        starts_at=row.starts_at,
+        ends_at=row.ends_at,
+        max_occurrences=row.max_occurrences,
+        priority=row.template.get("priority", "normal"),
+        sensitive=False,
+    )
+
+
+async def resume_schedule(
+    session,
+    actor,
+    schedule_id: str,
+    note: str = "",
+) -> AssistantScheduleResponse:
+    """复核后恢复已暂停规则；恢复前重新校验身份、权限和终止条件。"""
+
+    await lock_tenant(session, actor.tenant_id)
+    row = await _owned_schedule(session, actor, schedule_id, lock=True)
+    if row.status == "ACTIVE":
+        return _schedule_response(row)
+    if row.status != "PAUSED":
+        raise AppException(
+            ErrorCode.INVALID_STATE,
+            "仅已暂停规则可以恢复。",
+            http_status=422,
+        )
+
+    user = await session.get(OAUser, row.owner_id)
+    if user is None or user.tenant_id != row.tenant_id or user.status != "active":
+        raise AppException(
+            ErrorCode.FORBIDDEN,
+            "负责人账号不可用，规则无法恢复。",
+            http_status=403,
+        )
+    owner = await current_identity(session, user)
+    require_permission(owner, "work_task", "read")
+    require_permission(owner, "work_task", "write")
+
+    payload = _rule_payload(row)
+    next_run = calculate_next_run(payload, now_shanghai())
+    if next_run is None:
+        raise AppException(
+            ErrorCode.INVALID_STATE,
+            "终止条件已过，规则无法恢复；请新建周期规则。",
+            http_status=422,
+        )
+    row.status = "ACTIVE"
+    row.next_run_at = next_run
+    row.pause_reason = None
+    await session.flush()
+    await audit_service.audit(
+        session,
+        "assistant_schedule_resumed",
+        actor_id=actor.user_id,
+        target_type="assistant_schedule",
+        target_id=row.id,
+        output_summary={"note": note[:500]},
+    )
+    return _schedule_response(row)
+
+
+async def update_schedule(session, actor, draft: AssistantDraft) -> dict[str, Any]:
+    """确认编辑草稿后更新规则；原开始时间不可修改，暂停规则不会被静默恢复。"""
+
+    if not draft.payload.get("schedule_id"):
+        raise AppException(
+            ErrorCode.BAD_REQUEST,
+            "编辑周期规则缺少规则编号。",
+            http_status=422,
+        )
+
+    # 开始时间是历史锚点，编辑阶段不可变更；校验时以当前时间为起点重新计算。
+    edit_raw = {**draft.payload, "schedule_id": draft.payload["schedule_id"], "starts_at": None}
+    payload, _ = validate_schedule_payload(edit_raw)
+    await lock_tenant(session, actor.tenant_id)
+    row = await _owned_schedule(session, actor, payload.schedule_id, lock=True)
+    if row.status not in {"ACTIVE", "PAUSED"}:
+        raise AppException(
+            ErrorCode.INVALID_STATE,
+            "仅启用中或已暂停规则可以编辑。",
+            http_status=422,
+        )
+    if payload.max_occurrences is not None and payload.max_occurrences < row.occurrence_count:
+        raise AppException(
+            ErrorCode.BAD_REQUEST,
+            "最大执行次数不能小于已执行次数。",
+            http_status=422,
+        )
+
+    was_active = row.status == "ACTIVE"
+    row.title = payload.title
+    row.frequency = payload.frequency
+    row.day_of_week = payload.day_of_week
+    row.day_of_month = payload.day_of_month
+    row.run_time = payload.run_time
+    row.ends_at = payload.ends_at
+    row.max_occurrences = payload.max_occurrences
+    row.template = {
+        **row.template,
+        "title": payload.title,
+        "priority": payload.priority,
+        "sensitive": False,
+    }
+
+    if was_active:
+        next_run = calculate_next_run(payload, now_shanghai())
+        if next_run is None:
+            row.status = "COMPLETED"
+            row.next_run_at = None
+        else:
+            row.next_run_at = next_run
+    # 已暂停规则保持暂停、next_run_at 为空，需用户复核后显式恢复。
+
+    result = {
+        "schedule_id": row.id,
+        "next_run_at": row.next_run_at.isoformat() if row.next_run_at else None,
+        "updated": True,
+        "status": row.status,
+    }
+    draft.result = result
+    await session.flush()
+    await audit_service.audit(
+        session,
+        "assistant_schedule_updated",
+        actor_id=actor.user_id,
+        target_type="assistant_schedule",
+        target_id=row.id,
+        input_summary={
+            "frequency": row.frequency,
+            "previous_status": "ACTIVE" if was_active else "PAUSED",
+        },
+    )
+    return result
 
 
 async def scan_due_schedules(session) -> dict[str, int]:

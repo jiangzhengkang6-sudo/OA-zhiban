@@ -63,6 +63,12 @@ const monthDayOptions = Array.from({ length: 28 }, (_, index) => ({
   value: index + 1,
   label: `${index + 1}日`,
 }))
+const scheduleStatusLabels: Record<string, string> = {
+  ACTIVE: '启用中',
+  PAUSED: '已暂停',
+  CANCELLED: '已取消',
+  COMPLETED: '已完成',
+}
 
 const statCards = computed(() => {
   const sections = overview.value?.sections || []
@@ -207,6 +213,45 @@ async function cancelActiveSchedule(scheduleId: string) {
   ElMessage.success('周期规则已取消。')
 }
 
+async function resumeActiveSchedule(scheduleId: string) {
+  await assistantV2Api.resumeSchedule(scheduleId)
+  await loadSchedules()
+  ElMessage.success('周期规则已恢复。')
+}
+
+function editSchedule(schedule: AssistantSchedule) {
+  savedDraft.value = null
+  metadataConfirmed.value = false
+  riskAcknowledged.value = false
+  people.value = []
+  existingItems.value = []
+  draftResult.value = {
+    draft_type: 'schedule',
+    confidence: 'high',
+    draft: {
+      title: schedule.title,
+      schedule_id: schedule.id,
+      frequency: schedule.frequency,
+      day_of_week: schedule.day_of_week ?? null,
+      day_of_month: schedule.day_of_month ?? null,
+      run_time: schedule.run_time,
+      starts_at: null,
+      ends_at: schedule.ends_at ?? null,
+      max_occurrences: schedule.max_occurrences ?? null,
+      priority: schedule.template?.priority ?? 'normal',
+      sensitive: false,
+    },
+    missing_required: [],
+    warnings:
+      schedule.status === 'PAUSED'
+        ? ['规则当前已暂停；编辑确认后仍需手动恢复。']
+        : [],
+    confirmation_notice:
+      '当前结果只是编辑草稿；确认更新前会再次校验规则归属、权限与终止条件。',
+  }
+  draftText.value = ''
+}
+
 const parsedDraftReady = computed(() => {
   if (!draftResult.value) return false
   const draft = draftResult.value.draft
@@ -281,6 +326,9 @@ async function confirmSavedDraft() {
       metadata_confirmed: metadataConfirmed.value,
       risk_acknowledged: riskAcknowledged.value,
     })
+    if (savedDraft.value.result.schedule_id) {
+      await loadSchedules()
+    }
   } finally {
     confirmingDraft.value = false
   }
@@ -493,7 +541,7 @@ onMounted(() => {
 
         <div v-if="draftResult" class="draft-result">
           <header>
-            <strong>{{ draftResult.draft_type === 'meeting' ? '会议草稿' : draftResult.draft_type === 'schedule' ? '周期任务草稿' : '任务草稿' }}</strong>
+            <strong>{{ draftResult.draft_type === 'meeting' ? '会议草稿' : draftResult.draft_type === 'schedule' ? (draftResult.draft.schedule_id ? '编辑周期任务' : '周期任务草稿') : '任务草稿' }}</strong>
             <el-tag size="small" type="success">可信度：{{ { high: '高', medium: '中', low: '低' }[draftResult.confidence] }}</el-tag>
           </header>
           <el-alert
@@ -697,7 +745,10 @@ onMounted(() => {
             </template>
             <div v-else-if="savedDraft.status === 'CONFIRMED'" class="confirmed-result">
               <template v-if="savedDraft.result.schedule_id">
-                <strong>周期规则已创建：{{ savedDraft.result.schedule_id.slice(0, 8) }}</strong>
+                <strong>
+                  {{ savedDraft.result.updated ? '周期规则已更新：' : '周期规则已创建：' }}
+                  {{ savedDraft.result.schedule_id.slice(0, 8) }}
+                </strong>
                 <small>下一执行时间：{{ formatTime(savedDraft.result.next_run_at, 'datetime') }}</small>
               </template>
               <router-link v-if="savedDraft.result.task_id" :to="`/work-tasks/${savedDraft.result.task_id}`">
@@ -710,19 +761,40 @@ onMounted(() => {
                 <h5>我的周期规则</h5>
                 <article v-for="schedule in schedules" :key="schedule.id" class="schedule-row">
                   <div>
-                    <strong>{{ schedule.title }}</strong>
+                    <strong>
+                      {{ schedule.title }}
+                      <el-tag size="small" effect="plain">
+                        {{ scheduleStatusLabels[schedule.status] }}
+                      </el-tag>
+                    </strong>
                     <small>
                       {{ frequencyOptions.find(item => item.value === schedule.frequency)?.label }}
                       · 下次 {{ formatTime(schedule.next_run_at, 'datetime') }}
                       · 已执行 {{ schedule.occurrence_count }} 次
                     </small>
+                    <small v-if="schedule.pause_reason" class="pause-reason">
+                      暂停原因：{{ schedule.pause_reason }}
+                    </small>
                   </div>
-                  <el-button
-                    v-if="schedule.status === 'ACTIVE' || schedule.status === 'PAUSED'"
-                    size="small"
-                    :loading="schedulesLoading"
-                    @click="cancelActiveSchedule(schedule.id)"
-                  >取消规则</el-button>
+                  <div class="schedule-actions">
+                    <el-button
+                      v-if="schedule.status === 'PAUSED'"
+                      size="small"
+                      type="primary"
+                      @click="resumeActiveSchedule(schedule.id)"
+                    >恢复规则</el-button>
+                    <el-button
+                      v-if="schedule.status === 'ACTIVE' || schedule.status === 'PAUSED'"
+                      size="small"
+                      @click="editSchedule(schedule)"
+                    >编辑规则</el-button>
+                    <el-button
+                      v-if="schedule.status === 'ACTIVE' || schedule.status === 'PAUSED'"
+                      size="small"
+                      :loading="schedulesLoading"
+                      @click="cancelActiveSchedule(schedule.id)"
+                    >取消规则</el-button>
+                  </div>
                 </article>
               </div>
             </div>
@@ -1070,6 +1142,17 @@ onMounted(() => {
 }
 .schedule-row small {
   color: var(--oa-muted);
+}
+.pause-reason {
+  color: #b45309 !important;
+}
+.schedule-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 @media (max-width: 1000px) {
   .stat-grid,

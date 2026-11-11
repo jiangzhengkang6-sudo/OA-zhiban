@@ -71,6 +71,7 @@ class AssistantSchedule(Base, IdentityRow):
     max_occurrences: Mapped[int | None] = mapped_column(Integer)
     occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     template: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    pause_reason: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
