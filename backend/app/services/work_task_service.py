@@ -53,16 +53,21 @@ async def _available(session, actor, record=None):
 async def load_source(session, actor, source_type, source_id, source_version=None):
     """Only authoritative local sources; source text cannot expand authority."""
     actor = await _identity(session, actor)
-    if source_type == "assistant":
+    if source_type in {"assistant", "schedule"}:
+        batch_query = select(WorkTaskBatch).where(
+            WorkTaskBatch.tenant_id == actor.tenant_id,
+            WorkTaskBatch.source_type == source_type,
+            WorkTaskBatch.source_id == source_id,
+        )
+        if source_type == "schedule":
+            if source_version is None:
+                _deny("周期规则来源必须指定执行批次")
+            batch_query = batch_query.where(WorkTaskBatch.source_version == str(source_version))
         batch = await session.scalar(
-            select(WorkTaskBatch).where(
-                WorkTaskBatch.tenant_id == actor.tenant_id,
-                WorkTaskBatch.source_type == "assistant",
-                WorkTaskBatch.source_id == source_id,
-            )
+            batch_query
         )
         if batch is None or batch.owner_id != actor.user_id:
-            _deny("无权访问该助手来源")
+            _deny("无权访问该助手或周期规则来源")
         return batch.source_snapshot
     if source_type == 'email':
         from .public_mail_service import task_source
@@ -134,7 +139,13 @@ async def load_source(session, actor, source_type, source_id, source_version=Non
 
 
 async def _source_access(session, actor, batch):
-    version = int(batch.source_version) if batch.source_type in {"meeting", "approval"} else None
+    version = (
+        int(batch.source_version)
+        if batch.source_type in {"meeting", "approval"}
+        else batch.source_version
+        if batch.source_type == "schedule"
+        else None
+    )
     await load_source(session, actor, batch.source_type, batch.source_id, version)
 
 

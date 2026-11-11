@@ -1,11 +1,15 @@
 """统一 OA 智能助手 V2 的接口数据结构。"""
 
-from datetime import datetime
+from datetime import datetime, time, timedelta, timezone
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .oa_meeting import MeetingFields
+
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+SHANGHAI_OFFSET = timezone(timedelta(hours=8))
 
 
 class AssistantV2Request(BaseModel):
@@ -93,6 +97,43 @@ class AssistantTaskActionPayload(BaseModel):
     comment: str = Field(default="", max_length=2000)
 
 
+class AssistantSchedulePayload(BaseModel):
+    """助手周期任务草稿的结构化内容，仅允许本人、低风险规则。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(min_length=1, max_length=255)
+    frequency: Literal["daily", "weekly", "monthly"]
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
+    day_of_month: int | None = Field(default=None, ge=1, le=28)
+    run_time: time
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    max_occurrences: int | None = Field(default=None, ge=1, le=100)
+    priority: Literal["low", "normal"] = "normal"
+    sensitive: Literal[False] = False
+
+    @field_validator("run_time")
+    @classmethod
+    def shanghai_run_time(cls, value: time) -> time:
+        offset = value.utcoffset()
+        if value.tzinfo is None or offset is None:
+            raise ValueError("执行时间必须包含上海时区")
+        if offset != SHANGHAI_OFFSET.utcoffset(None):
+            raise ValueError("执行时间必须使用上海时区 UTC+08:00")
+        # time.isoformat() 对 ZoneInfo 可能不写入偏移，周期规则统一使用固定 +08:00。
+        return value.replace(tzinfo=SHANGHAI_OFFSET)
+
+    @field_validator("starts_at", "ends_at")
+    @classmethod
+    def aware_bound(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("周期起止时间必须包含时区")
+        return value
+
+
 class AssistantMeetingActionPayload(BaseModel):
     """助手对已有会议执行操作的草稿内容。"""
 
@@ -118,7 +159,7 @@ class AssistantExistingItem(BaseModel):
 class DraftSaveRequest(AssistantV2Request):
     """保存助手草稿请求。"""
 
-    draft_type: Literal["task", "meeting"]
+    draft_type: Literal["task", "meeting", "schedule"]
     draft: dict[str, Any]
 
 
@@ -197,7 +238,7 @@ class ReportDraftResponse(BaseModel):
 class DraftParseResponse(BaseModel):
     """自然语言草稿解析响应。"""
 
-    draft_type: Literal["task", "meeting"]
+    draft_type: Literal["task", "meeting", "schedule"]
     confidence: Literal["high", "medium", "low"]
     draft: dict[str, Any]
     missing_required: list[str]
@@ -209,13 +250,34 @@ class AssistantDraftResponse(BaseModel):
     """已保存助手草稿响应。"""
 
     id: str
-    draft_type: Literal["task", "meeting"]
+    draft_type: Literal["task", "meeting", "schedule"]
     status: Literal["DRAFT", "CONFIRMED", "CANCELLED"]
     payload: dict[str, Any]
     missing_required: list[str]
     warnings: list[str]
     result: dict[str, Any]
     notes: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class AssistantScheduleResponse(BaseModel):
+    """已启用周期规则响应。"""
+
+    id: str
+    status: Literal["ACTIVE", "PAUSED", "CANCELLED", "COMPLETED"]
+    title: str
+    frequency: Literal["daily", "weekly", "monthly"]
+    day_of_week: int | None
+    day_of_month: int | None
+    run_time: time
+    next_run_at: datetime | None
+    last_run_at: datetime | None
+    starts_at: datetime | None
+    ends_at: datetime | None
+    max_occurrences: int | None
+    occurrence_count: int
+    template: dict[str, Any]
     created_at: datetime
     updated_at: datetime
 

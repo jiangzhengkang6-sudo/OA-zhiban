@@ -14,6 +14,7 @@ import {
   type AssistantExistingItem,
   type AssistantPersonOption,
   type AssistantOverview,
+  type AssistantSchedule,
   type DraftParseResponse,
   type KnowledgeSearchResponse,
   type ReportDraftResponse,
@@ -35,12 +36,33 @@ const people = ref<AssistantPersonOption[]>([])
 const peopleLoading = ref(false)
 const existingItems = ref<AssistantExistingItem[]>([])
 const existingItemsLoading = ref(false)
+const schedules = ref<AssistantSchedule[]>([])
+const schedulesLoading = ref(false)
 const savedDraft = ref<SavedAssistantDraft | null>(null)
 const savingDraft = ref(false)
 const confirmingDraft = ref(false)
 const confirmOperationId = ref('')
 const metadataConfirmed = ref(false)
 const riskAcknowledged = ref(false)
+
+const frequencyOptions = [
+  { value: 'daily', label: '每天' },
+  { value: 'weekly', label: '每周' },
+  { value: 'monthly', label: '每月' },
+]
+const weekdayOptions = [
+  { value: 0, label: '星期一' },
+  { value: 1, label: '星期二' },
+  { value: 2, label: '星期三' },
+  { value: 3, label: '星期四' },
+  { value: 4, label: '星期五' },
+  { value: 5, label: '星期六' },
+  { value: 6, label: '星期日' },
+]
+const monthDayOptions = Array.from({ length: 28 }, (_, index) => ({
+  value: index + 1,
+  label: `${index + 1}日`,
+}))
 
 const statCards = computed(() => {
   const sections = overview.value?.sections || []
@@ -107,7 +129,9 @@ async function parseDraft() {
     people.value = []
     existingItems.value = []
     draftResult.value = await assistantV2Api.parseDraft(text, draftType.value)
-    if (draftResult.value.draft.operation) {
+    if (draftResult.value.draft_type === 'schedule') {
+      await loadSchedules()
+    } else if (draftResult.value.draft.operation) {
       await loadExistingItems(draftResult.value.draft_type)
     } else {
       await loadPeople(draftResult.value.draft_type)
@@ -139,6 +163,50 @@ async function loadPeople(draftType: 'task' | 'meeting') {
   }
 }
 
+async function loadSchedules() {
+  schedulesLoading.value = true
+  try {
+    schedules.value = await assistantV2Api.listSchedules()
+  } catch {
+    schedules.value = []
+  } finally {
+    schedulesLoading.value = false
+  }
+}
+
+function onScheduleFrequencyChange(value: string | Event) {
+  if (!draftResult.value) return
+  const frequency = typeof value === 'string' ? value : (value.target as HTMLSelectElement).value
+  const draft = draftResult.value.draft
+  draft.frequency = frequency
+  draft.day_of_week = frequency === 'weekly' ? draft.day_of_week ?? null : null
+  draft.day_of_month = frequency === 'monthly' ? draft.day_of_month ?? null : null
+}
+
+function onScheduleTimeChange(value: string | Event) {
+  if (!draftResult.value) return
+  const timeValue = typeof value === 'string' ? value : (value.target as HTMLInputElement).value
+  draftResult.value.draft.run_time = `${timeValue}:00+08:00`
+}
+
+function onScheduleEndDateChange(value: string | Event) {
+  if (!draftResult.value) return
+  const dateValue = typeof value === 'string' ? value : (value.target as HTMLInputElement).value
+  const draft = draftResult.value.draft
+  if (!dateValue) {
+    draft.ends_at = null
+    draft.max_occurrences = draft.max_occurrences || null
+    return
+  }
+  draft.ends_at = `${dateValue}T23:59:59+08:00`
+}
+
+async function cancelActiveSchedule(scheduleId: string) {
+  await assistantV2Api.cancelSchedule(scheduleId)
+  await loadSchedules()
+  ElMessage.success('周期规则已取消。')
+}
+
 const parsedDraftReady = computed(() => {
   if (!draftResult.value) return false
   const draft = draftResult.value.draft
@@ -147,6 +215,14 @@ const parsedDraftReady = computed(() => {
   }
   if (draftResult.value.draft_type === 'meeting' && draft.operation === 'cancel') {
     return !!(draft.meeting_id && draft.expected_revision > 0 && draft.reason)
+  }
+  if (draftResult.value.draft_type === 'schedule') {
+    const hasEnd = draft.ends_at || draft.max_occurrences
+    const dayReady =
+      draft.frequency === 'daily' ||
+      draft.frequency === 'weekly' && draft.day_of_week !== null && draft.day_of_week !== undefined ||
+      draft.frequency === 'monthly' && draft.day_of_month
+    return !!(draft.title && draft.run_time && hasEnd && dayReady)
   }
   if (draftResult.value.draft_type === 'task') {
     return !!(draft.title && draft.assignee_id && draft.due_at)
@@ -249,6 +325,24 @@ const draftRows = computed(() => {
       { label: '参会人员', value: (draft.attendee_names || []).join('、') || '需人工选择' },
       { label: '地点', value: draft.location || (draft.video_enabled ? '视频会议' : '—') },
       { label: '在线链接', value: draft.online_url || '—' },
+    ]
+  }
+  if (draftResult.value.draft_type === 'schedule') {
+    const frequencyLabel = frequencyOptions.find(item => item.value === draft.frequency)?.label || draft.frequency
+    const ruleDay =
+      draft.frequency === 'weekly'
+        ? weekdayOptions.find(item => item.value === draft.day_of_week)?.label || '需人工选择'
+        : draft.frequency === 'monthly'
+          ? `${draft.day_of_month || '—'}日`
+          : '自然日'
+    const endCondition = draft.max_occurrences
+      ? `共 ${draft.max_occurrences} 次`
+      : formatTime(draft.ends_at, 'datetime')
+    return [
+      { label: '周期事项', value: draft.title || '—' },
+      { label: '执行频率', value: `${frequencyLabel}${draft.frequency === 'daily' ? '' : ' · ' + ruleDay}` },
+      { label: '执行时间', value: draft.run_time || '—' },
+      { label: '终止条件', value: endCondition },
     ]
   }
   return [
@@ -399,7 +493,7 @@ onMounted(() => {
 
         <div v-if="draftResult" class="draft-result">
           <header>
-            <strong>{{ draftResult.draft_type === 'meeting' ? '会议草稿' : '任务草稿' }}</strong>
+            <strong>{{ draftResult.draft_type === 'meeting' ? '会议草稿' : draftResult.draft_type === 'schedule' ? '周期任务草稿' : '任务草稿' }}</strong>
             <el-tag size="small" type="success">可信度：{{ { high: '高', medium: '中', low: '低' }[draftResult.confidence] }}</el-tag>
           </header>
           <el-alert
@@ -467,6 +561,63 @@ onMounted(() => {
                 />
               </el-select>
             </label>
+            <template v-else-if="draftResult.draft_type === 'schedule'">
+              <label>
+                <span>执行频率</span>
+                <el-select
+                  :model-value="draftResult.draft.frequency"
+                  placeholder="选择执行频率"
+                  @change="onScheduleFrequencyChange"
+                >
+                  <el-option
+                    v-for="option in frequencyOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    :label="option.label"
+                  />
+                </el-select>
+              </label>
+              <label v-if="draftResult.draft.frequency === 'weekly'">
+                <span>每周执行日</span>
+                <el-select v-model="draftResult.draft.day_of_week" placeholder="选择执行日">
+                  <el-option
+                    v-for="option in weekdayOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    :label="option.label"
+                  />
+                </el-select>
+              </label>
+              <label v-if="draftResult.draft.frequency === 'monthly'">
+                <span>每月执行日</span>
+                <el-select v-model="draftResult.draft.day_of_month" placeholder="选择执行日">
+                  <el-option
+                    v-for="option in monthDayOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    :label="option.label"
+                  />
+                </el-select>
+              </label>
+              <label>
+                <span>执行时间</span>
+                <input
+                  class="native-time"
+                  type="time"
+                  :value="draftResult.draft.run_time?.slice(0, 5)"
+                  @change="onScheduleTimeChange"
+                />
+              </label>
+              <label>
+                <span>结束日期</span>
+                <input
+                  class="native-date"
+                  type="date"
+                  :value="draftResult.draft.ends_at?.slice(0, 10) || ''"
+                  @change="onScheduleEndDateChange"
+                />
+              </label>
+            </template>
             <label v-else class="meeting-attendee-field">
               <span>参会人员（正式账号）</span>
               <el-select
@@ -545,12 +696,35 @@ onMounted(() => {
               </div>
             </template>
             <div v-else-if="savedDraft.status === 'CONFIRMED'" class="confirmed-result">
+              <template v-if="savedDraft.result.schedule_id">
+                <strong>周期规则已创建：{{ savedDraft.result.schedule_id.slice(0, 8) }}</strong>
+                <small>下一执行时间：{{ formatTime(savedDraft.result.next_run_at, 'datetime') }}</small>
+              </template>
               <router-link v-if="savedDraft.result.task_id" :to="`/work-tasks/${savedDraft.result.task_id}`">
                 查看业务任务：{{ savedDraft.result.task_id }}
               </router-link>
               <router-link v-if="savedDraft.result.meeting_id" :to="`/meeting-events/${savedDraft.result.meeting_id}`">
                 查看会议安排：{{ savedDraft.result.meeting_id.slice(0, 8) }}
               </router-link>
+              <div v-if="schedules.length" class="schedule-list">
+                <h5>我的周期规则</h5>
+                <article v-for="schedule in schedules" :key="schedule.id" class="schedule-row">
+                  <div>
+                    <strong>{{ schedule.title }}</strong>
+                    <small>
+                      {{ frequencyOptions.find(item => item.value === schedule.frequency)?.label }}
+                      · 下次 {{ formatTime(schedule.next_run_at, 'datetime') }}
+                      · 已执行 {{ schedule.occurrence_count }} 次
+                    </small>
+                  </div>
+                  <el-button
+                    v-if="schedule.status === 'ACTIVE' || schedule.status === 'PAUSED'"
+                    size="small"
+                    :loading="schedulesLoading"
+                    @click="cancelActiveSchedule(schedule.id)"
+                  >取消规则</el-button>
+                </article>
+              </div>
             </div>
             <el-alert
               v-else-if="savedDraft.status === 'CANCELLED'"
@@ -863,6 +1037,39 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.confirmed-result small {
+  color: var(--oa-muted);
+}
+.native-time,
+.native-date {
+  min-height: 32px;
+  border: 1px solid var(--oa-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: var(--oa-surface);
+  color: var(--oa-text);
+}
+.schedule-list h5 {
+  margin: 10px 0 6px;
+}
+.schedule-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--oa-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.schedule-row div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.schedule-row small {
+  color: var(--oa-muted);
 }
 @media (max-width: 1000px) {
   .stat-grid,

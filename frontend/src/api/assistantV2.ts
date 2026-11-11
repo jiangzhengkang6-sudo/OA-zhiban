@@ -62,7 +62,7 @@ export interface ReportDraftResponse {
 }
 
 export interface DraftParseResponse {
-  draft_type: 'task' | 'meeting'
+  draft_type: 'task' | 'meeting' | 'schedule'
   confidence: 'high' | 'medium' | 'low'
   draft: Record<string, any>
   missing_required: string[]
@@ -72,13 +72,32 @@ export interface DraftParseResponse {
 
 export interface SavedAssistantDraft {
   id: string
-  draft_type: 'task' | 'meeting'
+  draft_type: 'task' | 'meeting' | 'schedule'
   status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED'
   payload: Record<string, any>
   missing_required: string[]
   warnings: string[]
   result: Record<string, any>
   notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AssistantSchedule {
+  id: string
+  status: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'COMPLETED'
+  title: string
+  frequency: 'daily' | 'weekly' | 'monthly'
+  day_of_week?: number | null
+  day_of_month?: number | null
+  run_time: string
+  next_run_at?: string | null
+  last_run_at?: string | null
+  starts_at?: string | null
+  ends_at?: string | null
+  max_occurrences?: number | null
+  occurrence_count: number
+  template: Record<string, any>
   created_at: string
   updated_at: string
 }
@@ -134,7 +153,7 @@ export const assistantV2Api = {
   existingItems(draftType: 'task' | 'meeting'): Promise<AssistantExistingItem[]> {
     return client.get('/assistant-v2/items', { params: { draft_type: draftType } })
   },
-  saveDraft(draftType: 'task' | 'meeting', draft: Record<string, any>): Promise<SavedAssistantDraft> {
+  saveDraft(draftType: 'task' | 'meeting' | 'schedule', draft: Record<string, any>): Promise<SavedAssistantDraft> {
     return client.post('/assistant-v2/drafts', { draft_type: draftType, draft })
   },
   listDrafts(): Promise<SavedAssistantDraft[]> {
@@ -155,6 +174,12 @@ export const assistantV2Api = {
   },
   cancelDraft(id: string, reason = ''): Promise<SavedAssistantDraft> {
     return client.post(`/assistant-v2/drafts/${id}/cancel`, { reason })
+  },
+  listSchedules(): Promise<AssistantSchedule[]> {
+    return client.get('/assistant-v2/schedules')
+  },
+  cancelSchedule(id: string, reason = '用户在统一助手中取消周期规则'): Promise<AssistantSchedule> {
+    return client.post(`/assistant-v2/schedules/${id}/cancel`, { reason })
   },
 }
 

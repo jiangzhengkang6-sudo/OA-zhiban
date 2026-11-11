@@ -13,6 +13,7 @@ from .oa_reimbursement import OAReimbursement, OAReimbursementVersion, OAReimbur
 from .oa_ticket import OATicket,OATicketAssignmentRule,OATicketFeedback
 from .oa_bridge import OABridgeConfirmation,OABridgeResult
 from .assistant_draft import AssistantDraft
+from .assistant_schedule import AssistantSchedule
 from .oa_notification import OAUserContact,OANotification,OANotificationDelivery,OANotificationAttempt
 from .oa_announcement import OAAnnouncement, OAAnnouncementRead
 from .oa_meeting import OAMeeting, OAMeetingAttendee
@@ -72,6 +73,7 @@ from .contract_review_version import ContractReviewVersion
 __all__ = [
     'OAUser', 'OADepartment', 'OAPosition', 'OAMembership', 'OARole',
     'OAPermission', 'OAUserRole', 'OARolePermission', 'OAAuthSession', 'OAAuthThrottle',
+    'AssistantSchedule',
     "WorkTaskBatch", "WorkTaskDraftVersion", "WorkTask", "WorkTaskEvent", "WorkTaskNotification",
     "ReportRecord", "ReportVersion", "ContractRecord", "ContractSource", "ContractReviewVersion",
     "EmailRecord",

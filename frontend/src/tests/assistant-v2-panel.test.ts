@@ -17,6 +17,8 @@ vi.mock('@/api/assistantV2', () => ({
     getDraft: vi.fn(),
     confirmDraft: vi.fn(),
     cancelDraft: vi.fn(),
+    listSchedules: vi.fn(),
+    cancelSchedule: vi.fn(),
   },
 }))
 
@@ -61,6 +63,7 @@ beforeEach(() => {
     ],
   })
   vi.mocked(assistantV2Api.existingItems).mockResolvedValue([])
+  vi.mocked(assistantV2Api.listSchedules).mockResolvedValue([])
 })
 
 async function render() {
@@ -265,6 +268,95 @@ describe('统一智能助手 V2 面板', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('查看业务任务：WT-456')
+  }, 15000)
+
+  it('把周期提醒保存为规则草稿，确认后才启用', async () => {
+    const draft = {
+      title: '检查工单',
+      frequency: 'daily',
+      day_of_week: null,
+      day_of_month: null,
+      run_time: '09:00:00+08:00',
+      starts_at: null,
+      ends_at: null,
+      max_occurrences: 2,
+      priority: 'normal',
+      sensitive: false,
+    }
+    vi.mocked(assistantV2Api.parseDraft).mockResolvedValue({
+      draft_type: 'schedule',
+      confidence: 'high',
+      draft,
+      missing_required: [],
+      warnings: [],
+      confirmation_notice: '当前结果只是周期规则草稿。',
+    } as any)
+    vi.mocked(assistantV2Api.saveDraft).mockResolvedValue({
+      id: 'schedule-draft-1',
+      draft_type: 'schedule',
+      status: 'DRAFT',
+      payload: draft,
+      missing_required: [],
+      warnings: [],
+      result: {},
+      notes: '',
+      created_at: '2026-11-11T10:00:00+08:00',
+      updated_at: '2026-11-11T10:00:00+08:00',
+    } as any)
+    vi.mocked(assistantV2Api.confirmDraft).mockResolvedValue({
+      id: 'schedule-draft-1',
+      draft_type: 'schedule',
+      status: 'CONFIRMED',
+      payload: draft,
+      missing_required: [],
+      warnings: [],
+      result: {
+        schedule_id: 'schedule-rule-1',
+        next_run_at: '2026-11-12T09:00:00+08:00',
+      },
+      notes: '',
+      created_at: '2026-11-11T10:00:00+08:00',
+      updated_at: '2026-11-11T10:00:00+08:00',
+    } as any)
+    vi.mocked(assistantV2Api.listSchedules).mockResolvedValue([
+      {
+        id: 'schedule-rule-1',
+        status: 'ACTIVE',
+        title: '检查工单',
+        frequency: 'daily',
+        run_time: '09:00:00+08:00',
+        next_run_at: '2026-11-12T09:00:00+08:00',
+        occurrence_count: 0,
+        template: {},
+        created_at: '2026-11-11T10:00:00+08:00',
+        updated_at: '2026-11-11T10:00:00+08:00',
+      },
+    ] as any)
+
+    const wrapper = await render()
+    await wrapper.get('textarea').setValue('每天上午9点提醒我检查工单，共2次')
+    const parseButton = wrapper.findAll('button').find(item => item.text().includes('生成结构化草稿'))!
+    await parseButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('周期任务草稿')
+    expect(wrapper.text()).toContain('共 2 次')
+    const saveButton = wrapper.findAll('button').find(item => item.text().includes('保存可确认草稿'))!
+    await saveButton.trigger('click')
+    await flushPromises()
+    expect(assistantV2Api.saveDraft).toHaveBeenCalledWith('schedule', draft)
+
+    await wrapper.get('.confirm-form input[type="checkbox"]').setValue(true)
+    const confirmButton = wrapper.findAll('button').find(item => item.text().includes('确认并写入'))!
+    await confirmButton.trigger('click')
+    await flushPromises()
+
+    expect(assistantV2Api.confirmDraft).toHaveBeenCalledWith(
+      'schedule-draft-1',
+      expect.objectContaining({ metadata_confirmed: true }),
+    )
+    expect(wrapper.text()).toContain('周期规则已创建')
+    expect(wrapper.text()).toContain('我的周期规则')
   }, 15000)
 })
 

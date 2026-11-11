@@ -45,6 +45,7 @@ from ..schemas.assistant_v2 import (
     ReportDraftResponse,
 )
 from . import (
+    assistant_schedule_service,
     audit_service,
     idempotency_service,
     knowledge_service,
@@ -55,6 +56,8 @@ from . import (
 )
 from .authorization_service import require_fresh_identity, require_permission
 from .identity_service import current_identity, lock_tenant
+
+SCHEDULE_FREQUENCY_LABELS = {"daily": "每天", "weekly": "每周", "monthly": "每月"}
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 WEEKDAY_LABELS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
@@ -421,6 +424,9 @@ class _NaturalDraftParser:
 
     def parse(self, text: str, draft_type: str) -> dict[str, Any]:
         normalized = re.sub(r"\s+", " ", text.strip())
+        schedule = self._parse_schedule(normalized, draft_type)
+        if schedule:
+            return schedule
         operation = self._detect_operation(normalized)
         detected_type = self._detect_type(normalized, draft_type)
         if operation == "complete_task" or operation == "cancel_task":
@@ -496,6 +502,134 @@ class _NaturalDraftParser:
                 "sensitive": False,
             }
         return {"draft_type": detected_type, "draft": draft}
+
+    def _detect_schedule(
+        self,
+        text: str,
+    ) -> tuple[str, int | None, int | None, re.Match[str]] | None:
+        candidates: list[tuple[str, int | None, int | None, re.Match[str]]] = []
+        daily = re.search(r"每[天日]|天天", text)
+        if daily:
+            candidates.append(("daily", None, None, daily))
+
+        weekly_patterns = (
+            r"每周\s*([一二三四五六日天])",
+            r"每?星期\s*([一二三四五六日天])",
+            r"每个?周\s*([一二三四五六日天])",
+            r"每周",
+        )
+        for pattern in weekly_patterns:
+            match = re.search(pattern, text)
+            if match:
+                day = self.WEEKDAYS[match.group(1)] if match.lastindex else None
+                candidates.append(("weekly", day, None, match))
+                break
+
+        monthly_patterns = (
+            r"每个?月\s*(\d{1,2})\s*[日号]",
+            r"每个?月",
+        )
+        for pattern in monthly_patterns:
+            match = re.search(pattern, text)
+            if match:
+                day = int(match.group(1)) if match.lastindex else None
+                if day is not None and not 1 <= day <= 28:
+                    self.warnings.append("首期仅支持每月 1 日至 28 日，请人工调整日期。")
+                candidates.append(("monthly", None, day, match))
+                break
+
+        if not candidates:
+            return None
+        return min(candidates, key=lambda item: item[3].start())
+
+    def _add_months_to_date(self, value: date, months: int) -> date:
+        month_index = value.month - 1 + months
+        year = value.year + month_index // 12
+        month = month_index % 12 + 1
+        return date(year, month, min(value.day, 28))
+
+    def _extract_schedule_ends(
+        self,
+        text: str,
+    ) -> tuple[datetime | None, int | None]:
+        ends_at: datetime | None = None
+        max_occurrences: int | None = None
+        count_match = re.search(r"共\s*(\d{1,3})\s*次", text)
+        if count_match:
+            self._remember_span(count_match)
+            max_occurrences = int(count_match.group(1))
+
+        duration_match = re.search(r"(?:持续|连续)(\d{1,3})(个?月|周|天)", text)
+        if duration_match:
+            self._remember_span(duration_match)
+            amount = int(duration_match.group(1))
+            unit = duration_match.group(2)
+            if unit.endswith("月"):
+                end_date = self._add_months_to_date(self.anchor, amount)
+            elif unit == "周":
+                end_date = self.anchor + timedelta(weeks=amount)
+            else:
+                end_date = self.anchor + timedelta(days=amount)
+            ends_at = datetime.combine(end_date, time.max, SHANGHAI_TZ)
+
+        end_match = re.search(
+            r"(?:到|至|截止到?|截至)\s*(?:(\d{4})[-/年])?(\d{1,2})[-/月](\d{1,2})日?",
+            text,
+        )
+        if end_match:
+            self._remember_span(end_match)
+            year = int(end_match.group(1) or self.anchor.year)
+            end_date = date(year, int(end_match.group(2)), int(end_match.group(3)))
+            if end_match.group(1) is None and end_date < self.anchor:
+                end_date = date(year + 1, end_date.month, end_date.day)
+            ends_at = datetime.combine(end_date, time.max, SHANGHAI_TZ)
+        return ends_at, max_occurrences
+
+    def _parse_schedule(self, text: str, draft_type: str) -> dict[str, Any] | None:
+        if draft_type == "meeting":
+            return None
+        detected = self._detect_schedule(text)
+        if detected is None:
+            return None
+        frequency, day_of_week, day_of_month, match = detected
+        self._remember_span(match)
+
+        start_at = self._extract_start_time(text)
+        if start_at is None:
+            start_at = datetime(2000, 1, 1, 9, 0, tzinfo=SHANGHAI_TZ)
+            self.warnings.append("未识别具体执行时间，已按工作日常用时间 09:00 预填，请核对。")
+        ends_at, max_occurrences = self._extract_schedule_ends(text)
+        if ends_at is None and max_occurrences is None:
+            self.warnings.append("请补充结束日期或最大执行次数，周期规则需有明确终止条件。")
+
+        title = self._task_title(text)
+        if self._priority(text) == "high":
+            self.warnings.append("周期任务首期不支持高优先级，已按普通优先级处理，请核对。")
+        if day_of_week is None and frequency == "weekly":
+            self.warnings.append("未识别每周执行日，请人工选择。")
+        if day_of_month is None and frequency == "monthly":
+            self.warnings.append("未识别每月执行日，请人工选择。")
+        elif day_of_month is not None and not 1 <= day_of_month <= 28:
+            day_of_month = None
+
+        run_time = start_at.astimezone(SHANGHAI_TZ).timetz().replace(
+            tzinfo=timezone(timedelta(hours=8))
+        )
+        return {
+            "draft_type": "schedule",
+            "draft": {
+                "title": title,
+                "frequency": frequency,
+                "day_of_week": day_of_week,
+                "day_of_month": day_of_month,
+                "run_time": run_time.isoformat(),
+                "starts_at": None,
+                "ends_at": ends_at.isoformat() if ends_at else None,
+                "max_occurrences": max_occurrences,
+                "priority": "normal",
+                "sensitive": False,
+            },
+        }
 
     def _detect_operation(self, text: str) -> str:
         if re.search(r"取消", text) and re.search(r"会议|开会|评审|沟通会|研讨会|复盘会|例会", text):
@@ -775,6 +909,20 @@ async def parse_natural_draft(session, actor, payload) -> DraftParseResponse:
             parser.warnings.append("当前账号没有业务任务写入权限，不能执行该任务操作。")
         if not draft.get("task_id"):
             missing_required.append("目标任务")
+    elif draft_type == "schedule":
+        require_permission(actor, "work_task", "read")
+        if not _has_permission(actor, "work_task", "write"):
+            parser.warnings.append("当前账号没有业务任务写入权限，不能启用周期规则。")
+        if not draft.get("title"):
+            missing_required.append("周期事项标题")
+        if not draft.get("run_time"):
+            missing_required.append("执行时间")
+        if draft.get("frequency") == "weekly" and draft.get("day_of_week") is None:
+            missing_required.append("每周执行日")
+        if draft.get("frequency") == "monthly" and draft.get("day_of_month") is None:
+            missing_required.append("每月执行日")
+        if draft.get("ends_at") is None and draft.get("max_occurrences") is None:
+            missing_required.append("结束日期或最大执行次数")
     elif draft.get("operation") == "cancel" and draft_type == "meeting":
         require_permission(actor, "meeting", "read")
         if not _has_permission(actor, "meeting", "write"):
@@ -920,6 +1068,10 @@ async def _validate_saved_payload(
     """把草稿内容转换为后端强类型结构，并执行实时权限校验。"""
 
     warnings: list[str] = []
+    if draft_type == "schedule":
+        require_permission(actor, "work_task", "write")
+        payload, schedule_warnings = assistant_schedule_service.validate_schedule_payload(raw)
+        return payload, schedule_warnings
     if draft_type == "task":
         require_permission(actor, "work_task", "write")
         if raw.get("operation", "create") != "create":
@@ -1298,7 +1450,7 @@ async def confirm_draft(
     if not payload.metadata_confirmed:
         raise AppException(
             ErrorCode.BAD_REQUEST,
-            "请先核对会议或任务内容，并勾选信息确认。",
+            "请先核对任务、会议或周期规则内容，并勾选信息确认。",
             http_status=422,
         )
 
@@ -1333,7 +1485,9 @@ async def confirm_draft(
     )
     command, fresh = await idempotency_service.claim(session, envelope)
     if fresh:
-        if (
+        if draft.draft_type == "schedule":
+            await assistant_schedule_service.create_schedule(session, actor, draft)
+        elif (
             draft.draft_type == "task"
             and draft.payload.get("operation", "create") != "create"
         ):
@@ -1411,4 +1565,24 @@ async def cancel_saved_draft(
     )
     await session.refresh(draft)
     return _draft_response(draft)
+
+
+async def list_schedule_rules(session, actor):
+    """列出当前用户的周期规则。"""
+
+    actor = await require_fresh_identity(actor, session=session)
+    require_permission(actor, "work_task", "read")
+    return await assistant_schedule_service.list_schedules(session, actor)
+
+
+async def cancel_schedule_rule(session, actor, schedule_id: str, reason: str):
+    """取消当前用户的周期规则。"""
+
+    actor = await require_fresh_identity(actor, session=session)
+    return await assistant_schedule_service.cancel_schedule(
+        session,
+        actor,
+        schedule_id,
+        reason,
+    )
 

@@ -127,3 +127,28 @@ async def cancel_draft(
     await session.commit()
     return ok(result)
 
+
+@router.get("/schedules")
+async def list_schedules(
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return ok(await assistant_v2_service.list_schedule_rules(session, user))
+
+
+@router.post("/schedules/{schedule_id}/cancel")
+async def cancel_schedule(
+    schedule_id: str,
+    payload: DraftCancelRequest,
+    session: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = await assistant_v2_service.cancel_schedule_rule(
+        session,
+        user,
+        schedule_id,
+        payload.reason,
+    )
+    await session.commit()
+    return ok(result)
+

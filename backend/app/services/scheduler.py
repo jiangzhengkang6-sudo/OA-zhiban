@@ -60,6 +60,12 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
                     await formal_db.commit()
                     if report['errors']:
                         logger.warning('正式流程扫描部分失败: %s', report['errors'])
+                from .assistant_schedule_service import scan_due_schedules
+                async with async_session_factory() as schedule_db:
+                    schedule_report = await scan_due_schedules(schedule_db)
+                    await schedule_db.commit()
+                    if schedule_report['paused']:
+                        logger.warning('助手周期规则安全暂停: %s', schedule_report)
             elif settings.ai_enabled:
                 await _tick()
         except Exception as exc:  # 单次失败不终止循环
