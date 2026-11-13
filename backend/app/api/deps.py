@@ -41,7 +41,7 @@ async def get_current_user(request: Request, session: AsyncSession = Depends(get
         if prefix in {'admin', 'agent'}:
             prefix = path.split('/')[1] if '/' in path else ''
         # 统一助手按具体业务卡片分别授权，不能因缺少某个模块权限而拒绝整个总览。
-        if prefix == 'assistant-v2':
+        if prefix in {'assistant-v2', 'assistant-v3'}:
             return user
         # Each formal route below has a separate permission check and service boundary.
         formal = {'/oa/workflows': 'workflow','/oa/leaves':'leave','/oa/balances':'leave_balance',

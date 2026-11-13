@@ -16,7 +16,8 @@ import SourceCard from '@/components/SourceCard.vue'
 import PrecheckTable from '@/components/PrecheckTable.vue'
 import { authState } from '@/stores/auth'
 import { messageOf, oaLabel } from '@/utils/oa'
-import AssistantV2Panel from '@/components/AssistantV2Panel.vue'
+import AssistantV3Panel from '@/components/AssistantV3Panel.vue'
+import type { AssistantV3ChatResponse } from '@/api/assistantV3'
 
 const assistant = useAssistantStore()
 const route = useRoute()
@@ -266,15 +267,32 @@ async function recover() {
   finally { recovering.value = false }
 }
 watch(() => route.params.threadId || route.query.threadId, recover, { immediate: true })
+
+function handleLegacyRouted(result: AssistantV3ChatResponse) {
+  if (!result.legacy) return
+  const legacy = result.legacy
+  threadId.value = legacy.thread_id
+  detail.value = legacy.detail
+  scene.value = legacy.scene
+  businessId.value = legacy.detail.business_id || ''
+  chatLines.splice(
+    0,
+    chatLines.length,
+    ...legacy.detail.messages.map(message => ({ role: message.role, content: message.summary })),
+  )
+  saveState()
+}
 </script>
 
 <template>
   <el-card shadow="never" class="assistant">
-    <el-tabs v-model="activePanel" class="assistant-tabs">
-      <el-tab-pane label="统一助手" name="v2">
-        <AssistantV2Panel />
-      </el-tab-pane>
-      <el-tab-pane label="专项助手" name="special">
+    <AssistantV3Panel @legacy-routed="handleLegacyRouted" />
+
+    <div v-if="detail" class="legacy-skill-card">
+      <header class="legacy-title">
+        <h3>技能执行与确认</h3>
+        <span>{{ SCENE_MAP[detail.scene] || detail.scene }}</span>
+      </header>
     <!-- 顶部：场景与会话控制 -->
     <div class="toolbar">
       <el-button type="primary" @click="router.push(authState.provider === 'builtin' ? '/oa/leaves/new' : '/leaves/new')">填写请假申请</el-button>
@@ -455,12 +473,32 @@ watch(() => route.params.threadId || route.query.threadId, recover, { immediate:
         <el-button type="primary" :disabled="ticketBusy || !ticketEdit.summary.trim()" @click="saveTicketDraft">保存修改</el-button>
       </template>
     </el-dialog>
-      </el-tab-pane>
-    </el-tabs>
+    </div>
   </el-card>
 </template>
 
 <style scoped>
+.legacy-skill-card {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 12px;
+  background: var(--el-fill-color-blank);
+}
+.legacy-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.legacy-title h3 {
+  margin: 0;
+}
+.legacy-title span {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
 .toolbar {
   display: flex;
   gap: 12px;

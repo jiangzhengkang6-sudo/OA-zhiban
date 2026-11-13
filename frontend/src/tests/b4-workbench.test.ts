@@ -10,6 +10,11 @@ import LeaveDetailView from '@/views/LeaveDetailView.vue'
 import App from '@/App.vue'
 import { leaveApi, taskApi, threadApi } from '@/api'
 import { useAssistantStore } from '@/stores/assistant'
+import { assistantV3Api } from '@/api/assistantV3'
+
+vi.mock('@/api/assistantV3', () => ({
+  assistantV3Api: { chat: vi.fn() },
+}))
 
 vi.mock('@/api', () => ({
   leaveApi: { create: vi.fn(), get: vi.fn(), patch: vi.fn(), submit: vi.fn(), versions: vi.fn(), decide: vi.fn(), attachments: vi.fn().mockResolvedValue([]), uploadAttachment: vi.fn(), scanAttachment: vi.fn(), downloadAttachment: vi.fn() },
@@ -165,31 +170,57 @@ describe('B4 workbench', () => {
     expect(router.currentRoute.value.path).toBe('/assistant/new1')
     wrapper.unmount()
   })
-  it('creates one conversation and sends once when Enter is pressed twice during creation', async () => {
-    let resolveCreate!: (value: any) => void
-    vi.mocked(threadApi.create).mockReturnValue(new Promise(resolve => { resolveCreate = resolve }))
-    vi.mocked(threadApi.get).mockResolvedValue({ thread_id: 'new1', scene: 'faq', status: 'COMPLETED', messages: [] })
+  it('calls the unified assistant once when Enter is pressed twice while processing', async () => {
+    let resolveChat!: (value: any) => void
+    vi.mocked(assistantV3Api.chat).mockReturnValue(new Promise(resolve => { resolveChat = resolve }))
     const { wrapper, router } = await render(AssistantView, '/assistant')
-    const input = wrapper.get('.input-area input')
+    const input = wrapper.get('.composer .el-input input')
     await input.setValue('年假制度是什么？')
     await input.trigger('keyup.enter')
     await input.trigger('keyup.enter')
-    expect(threadApi.create).toHaveBeenCalledTimes(1)
-    resolveCreate({ thread_id: 'new1', status: 'CREATED' })
+    expect(assistantV3Api.chat).toHaveBeenCalledTimes(1)
+    resolveChat({
+      reply: '年假制度依据如下',
+      skill: 'knowledge',
+      confidence: 'high',
+      citations: [],
+      draft_proposal: null,
+      report: null,
+      overview: null,
+      knowledge: null,
+      legacy: null,
+      follow_ups: [],
+      safety_notice: '安全提示',
+      generated_at: new Date().toISOString(),
+    })
     await flushPromises()
-    expect(threadApi.sendMessage).toHaveBeenCalledTimes(1)
-    expect(threadApi.sendMessage).toHaveBeenCalledWith('new1', { content: '年假制度是什么？' })
-    expect(router.currentRoute.value.path).toBe('/assistant/new1')
+    expect(router.currentRoute.value.path).toBe('/assistant')
     wrapper.unmount()
   })
-  it('ignores repeated new conversation clicks while creation is pending', async () => {
-    let resolveCreate!: (value: any) => void
-    vi.mocked(threadApi.create).mockReturnValue(new Promise(resolve => { resolveCreate = resolve }))
+  it('ignores repeated send clicks while the unified assistant is processing', async () => {
+    let resolveChat!: (value: any) => void
+    vi.mocked(assistantV3Api.chat).mockReturnValue(new Promise(resolve => { resolveChat = resolve }))
     const { wrapper } = await render(AssistantView, '/assistant')
-    const button = wrapper.findAll('button').find(b => b.text() === '新建会话')!
-    await button.trigger('click'); await button.trigger('click')
-    expect(threadApi.create).toHaveBeenCalledTimes(1)
-    resolveCreate({ thread_id: 'new1', status: 'CREATED' })
+    const input = wrapper.get('.composer .el-input input')
+    await input.setValue('帮我安排任务')
+    const button = wrapper.findAll('button').find(b => b.text() === '发送')!
+    await button.trigger('click')
+    await button.trigger('click')
+    expect(assistantV3Api.chat).toHaveBeenCalledTimes(1)
+    resolveChat({
+      reply: '任务草稿已生成',
+      skill: 'task',
+      confidence: 'high',
+      citations: [],
+      draft_proposal: null,
+      report: null,
+      overview: null,
+      knowledge: null,
+      legacy: null,
+      follow_ups: [],
+      safety_notice: '安全提示',
+      generated_at: new Date().toISOString(),
+    })
     await flushPromises()
     wrapper.unmount()
   })
